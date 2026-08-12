@@ -9,7 +9,7 @@ from src.pipeline import (
     preprocess_single_record, 
     CLEANED_DATA_PATH, 
     SCALER_PATH,
-    FEATURES
+    BASE_FEATURES
 )
 from src.generator import generate_synthetic_workload
 
@@ -61,16 +61,27 @@ def test_pipeline_deduplication_and_null_imputation(setup_test_data):
     # Load cleaned data
     df = pd.read_csv("data/test_cleaned.csv")
     
-    # 1. Assert no NaNs are present in features
-    assert df[FEATURES].isnull().sum().sum() == 0
+    # Load the dynamic features list
+    model_features = joblib.load("artifacts/features_list.pkl")
     
-    # 2. Check schema and range validity
-    assert validate_dataset(df, raise_exception=False) is True
+    # 1. Assert no NaNs are present in features
+    assert df[model_features].isnull().sum().sum() == 0
+    
+    # 2. Check range validity of base data
+    assert validate_dataset(df[ ["timestamp"] + BASE_FEATURES + ["required_servers"] ], raise_exception=False) is True
 
 def test_preprocess_single_record(setup_test_data):
     scaler = joblib.load(SCALER_PATH)
+    model_features = joblib.load("artifacts/features_list.pkl")
     
+    # Load past 30 rows to act as history context
+    clean_df = pd.read_csv("data/test_cleaned.csv")
+    raw_columns = ["timestamp"] + BASE_FEATURES
+    history_df = clean_df[raw_columns].tail(30).reset_index(drop=True)
+    
+    # The new live record payload
     valid_record = {
+        "timestamp": "2026-08-03 00:00:00",
         "cpu_usage": 80.0,
         "memory_usage": 70.0,
         "network_in": 120.0,
@@ -86,6 +97,10 @@ def test_preprocess_single_record(setup_test_data):
         "server_cost": 0.50
     }
     
-    scaled_vector = preprocess_single_record(valid_record, scaler)
-    assert scaled_vector.shape == (1, len(FEATURES))
+    # Append the new record to construct the context
+    new_row_df = pd.DataFrame([valid_record])
+    context_df = pd.concat([history_df, new_row_df], ignore_index=True)
+    
+    scaled_vector = preprocess_single_record(context_df, scaler)
+    assert scaled_vector.shape == (1, len(model_features))
     assert isinstance(scaled_vector, np.ndarray)

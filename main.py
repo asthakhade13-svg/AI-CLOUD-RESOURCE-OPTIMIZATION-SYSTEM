@@ -5,12 +5,14 @@ import joblib
 import pandas as pd
 import numpy as np
 import os
-from src.pipeline import FEATURES, preprocess_single_record, DatasetValidationError
+import threading
+from datetime import datetime
+from src.pipeline import BASE_FEATURES, preprocess_single_record, DatasetValidationError
 
 app = FastAPI(
     title="AI Cloud Resource Optimization API",
-    description="A FastAPI backend to predict required servers and recommend auto-scaling actions based on 13 system metrics.",
-    version="2.0.0"
+    description="A FastAPI backend leveraging advanced feature engineering (lags, rolling stats, cyclical time) for autoscaling predictions.",
+    version="3.0.0"
 )
 
 # Enable CORS for frontend integration
@@ -25,15 +27,21 @@ app.add_middleware(
 # Paths to serialized objects
 MODEL_PATH = "artifacts/cloud_resource_optimization_model.pkl"
 SCALER_PATH = "artifacts/scaler.pkl"
+CLEANED_DATA_PATH = "data/cleaned_workload.csv"
 
 # Global variables to store loaded assets
 model = None
 scaler = None
 
+# Thread-safe sliding window buffer to cache the historical workload state
+history_buffer = None
+buffer_lock = threading.Lock()
+
 @app.on_event("startup")
-def load_assets():
-    global model, scaler
-    # Load Model
+def load_assets_and_seed_buffer():
+    global model, scaler, history_buffer
+    
+    # 1. Load ML Model
     if os.path.exists(MODEL_PATH):
         try:
             model = joblib.load(MODEL_PATH)
@@ -43,7 +51,7 @@ def load_assets():
     else:
         print(f"Warning: Model file '{MODEL_PATH}' not found. Please train the model first.")
         
-    # Load Scaler
+    # 2. Load Scaler
     if os.path.exists(SCALER_PATH):
         try:
             scaler = joblib.load(SCALER_PATH)
@@ -52,6 +60,27 @@ def load_assets():
             print(f"Error loading scaler on startup: {e}")
     else:
         print(f"Warning: Scaler file '{SCALER_PATH}' not found. Please run the preprocessing pipeline first.")
+        
+    # 3. Seed the Sliding Window History Buffer (requires 30 past observations to compute rolling/lag features)
+    with buffer_lock:
+        if os.path.exists(CLEANED_DATA_PATH):
+            try:
+                # Load columns representing raw telemetry metrics
+                raw_columns = ["timestamp"] + BASE_FEATURES
+                df_clean = pd.read_csv(CLEANED_DATA_PATH)
+                
+                # If required_servers target column is in the CSV but not needed for predict features,
+                # we drop it and filter to the expected columns
+                available_cols = [c for c in raw_columns if c in df_clean.columns]
+                history_buffer = df_clean[available_cols].tail(30).reset_index(drop=True)
+                print(f"History buffer successfully seeded with {len(history_buffer)} records from cleaned workload history.")
+            except Exception as e:
+                print(f"Error seeding history buffer: {e}")
+                # Initialize empty structure
+                history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
+        else:
+            print(f"Warning: Cleaned workload CSV '{CLEANED_DATA_PATH}' not found. History buffer initialized empty.")
+            history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
 
 class PredictionInput(BaseModel):
     cpu_usage: float = Field(..., ge=0, le=100, description="CPU usage percentage (0-100)", json_schema_extra={"example": 75.0})
@@ -78,11 +107,12 @@ class PredictionOutput(BaseModel):
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to the AI Cloud Resource Optimization API v2.0",
+        "message": "Welcome to the AI Cloud Resource Optimization API v3.0 (Stateful Feature Engineering)",
         "docs_url": "/docs",
         "health_check_url": "/health",
         "model_loaded": model is not None,
-        "scaler_loaded": scaler is not None
+        "scaler_loaded": scaler is not None,
+        "history_buffer_size": len(history_buffer) if history_buffer is not None else 0
     }
 
 @app.get("/health")
@@ -95,32 +125,49 @@ def health_check():
         "status": "healthy",
         "model_file": MODEL_PATH,
         "model_type": type(model).__name__,
-        "scaler_file": SCALER_PATH
+        "scaler_file": SCALER_PATH,
+        "history_buffer_size": len(history_buffer) if history_buffer is not None else 0
     }
 
 @app.post("/predict", response_model=PredictionOutput)
 def predict(payload: PredictionInput):
-    global model, scaler
+    global model, scaler, history_buffer
     
-    # 1. Lazy-load model and scaler if not loaded during startup
+    # 1. Check assets
     if model is None or scaler is None:
-        load_assets()
-        if model is None or scaler is None:
-            raise HTTPException(
-                status_code=503,
-                detail="ML model or preprocessor assets not loaded. Run training script first."
-            )
-            
+        raise HTTPException(
+            status_code=503,
+            detail="ML model or preprocessor assets not loaded. Run pipeline and training scripts first."
+        )
+        
     # 2. Extract inputs and compute network_traffic if missing
     input_dict = payload.dict()
     if input_dict.get("network_traffic") is None:
         input_dict["network_traffic"] = input_dict["network_in"] + input_dict["network_out"]
         
+    # Attach current timestamp for cyclical extraction
+    input_dict["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     try:
-        # 3. Clean and scale using the pipeline helper
-        scaled_input = preprocess_single_record(input_dict, scaler)
+        # Create single row DataFrame
+        new_row_df = pd.DataFrame([input_dict])
         
-        # 4. Generate prediction
+        # 3. Thread-safe buffer update and stateful feature engineering
+        with buffer_lock:
+            # Append new record to historical dataframe
+            combined_df = pd.concat([history_buffer, new_row_df], ignore_index=True)
+            # Keep sliding window context: last 30 hours of history + 1 new row = 31 records maximum
+            context_df = combined_df.tail(31).reset_index(drop=True)
+            
+            # Preprocess the entire context window, which computes lags/moving stats 
+            # and returns the scaled feature vector of the latest row
+            scaled_input = preprocess_single_record(context_df, scaler)
+            
+            # Update history buffer (slide forward, keeping only base features and timestamp)
+            raw_cols = ["timestamp"] + BASE_FEATURES
+            history_buffer = context_df[raw_cols].tail(30).reset_index(drop=True)
+            
+        # 4. Generate prediction using the best model trained on engineered features
         raw_pred = model.predict(scaled_input)[0]
         required_servers = int(np.round(raw_pred))
         required_servers = max(1, required_servers)  # Ensure at least 1 server runs
@@ -129,14 +176,14 @@ def predict(payload: PredictionInput):
         if required_servers > payload.current_servers:
             action = "SCALE UP"
             diff = required_servers - payload.current_servers
-            reasoning = f"Current load requires {required_servers} servers. Scale up by adding {diff} server(s)."
+            reasoning = f"Current workload trends suggest scaling up to {required_servers} servers (Add {diff} server(s))."
         elif required_servers < payload.current_servers:
             action = "SCALE DOWN"
             diff = payload.current_servers - required_servers
-            reasoning = f"Current load only requires {required_servers} servers. Scale down by removing {diff} server(s) to optimize costs."
+            reasoning = f"Workload demand has stabilized. Scaling down to {required_servers} servers (Remove {diff} server(s)) to minimize costs."
         else:
             action = "NO ACTION NEEDED"
-            reasoning = "Current server count is perfectly optimized for the system load."
+            reasoning = "System resources are perfectly balanced and optimized for the current demand trends."
             
         return PredictionOutput(
             predicted_required_servers=required_servers,
@@ -157,12 +204,19 @@ def get_features():
         raise HTTPException(status_code=503, detail="Model is not loaded.")
         
     try:
+        # Load feature names dynamically from saved list
+        features_list_path = "artifacts/features_list.pkl"
+        if os.path.exists(features_list_path):
+            features = joblib.load(features_list_path)
+        else:
+            features = BASE_FEATURES
+            
         importance = model.feature_importances_
-        importance_dict = {feat: float(imp) for feat, imp in zip(FEATURES, importance)}
+        importance_dict = {feat: float(imp) for feat, imp in zip(features, importance)}
         sorted_importance = dict(sorted(importance_dict.items(), key=lambda item: item[1], reverse=True))
         
         return {
-            "features": FEATURES,
+            "features": features,
             "importances": sorted_importance
         }
     except AttributeError:

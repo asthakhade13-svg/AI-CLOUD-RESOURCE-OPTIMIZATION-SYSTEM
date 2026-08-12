@@ -4,71 +4,28 @@ import os
 import joblib
 from sklearn.preprocessing import StandardScaler
 from src.validation import validate_dataset, DatasetValidationError
+from src.features import apply_feature_engineering_pipeline
 
 # Paths for storing pipeline output and artifacts
 CLEANED_DATA_PATH = "data/cleaned_workload.csv"
 SCALER_PATH = "artifacts/scaler.pkl"
 
-# Features used for ML modeling (all numeric input telemetry)
-FEATURES = [
+# Base input columns
+BASE_FEATURES = [
     "cpu_usage", "memory_usage", "network_in", "network_out", 
     "network_traffic", "disk_read", "disk_write", "active_users", 
     "request_rate", "response_time", "error_rate", "current_servers", 
     "server_cost"
 ]
+
+# We will dynamically populate ALL_MODEL_FEATURES after running the pipeline, 
+# but we can list the expected structure for verification.
 TARGET = "required_servers"
-
-def convert_and_sort_timestamps(df: pd.DataFrame) -> pd.DataFrame:
-    """Standardizes the timestamp column to datetime and sorts chronologically."""
-    df = df.copy()
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df = df.sort_values(by="timestamp").reset_index(drop=True)
-    return df
-
-def clean_missing_values(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Imputes missing values.
-    For time-series cloud metrics, forward-fill (ffill) followed by 
-    backward-fill (bfill) is standard to maintain sequence continuity.
-    """
-    df = df.copy()
-    # Apply ffill and bfill on numeric features
-    df[FEATURES] = df[FEATURES].ffill().bfill()
-    # Check if target also has NaNs and handle it
-    if TARGET in df.columns:
-        df[TARGET] = df[TARGET].ffill().bfill()
-    return df
-
-def detect_and_handle_outliers(df: pd.DataFrame, iqr_multiplier=3.0) -> pd.DataFrame:
-    """
-    Detects outliers in features using the IQR (Interquartile Range) method.
-    Clips extreme outliers to the upper/lower boundary thresholds rather than 
-    deleting data, preserving the integrity of the timeline.
-    """
-    df = df.copy()
-    for col in FEATURES:
-        # Define ranges according to physical/business rules first
-        if col in ["cpu_usage", "memory_usage", "error_rate"]:
-            df[col] = df[col].clip(0.0, 100.0)
-        elif col in ["network_in", "network_out", "network_traffic", "disk_read", "disk_write", "active_users", "request_rate", "response_time", "server_cost"]:
-            df[col] = df[col].clip(lower=0.0)
-            
-        # Apply statistical IQR thresholding for remaining extreme outliers
-        q1 = df[col].quantile(0.25)
-        q3 = df[col].quantile(0.75)
-        iqr = q3 - q1
-        lower_bound = q1 - (iqr_multiplier * iqr)
-        upper_bound = q3 + (iqr_multiplier * iqr)
-        
-        # Clip to IQR boundaries
-        df[col] = df[col].clip(lower=lower_bound, upper=upper_bound)
-        
-    return df
 
 def run_preprocessing_pipeline(raw_csv_path: str, output_csv_path: str = CLEANED_DATA_PATH) -> pd.DataFrame:
     """
-    Inbound batch preprocessing pipeline. Reads raw metrics, executes duplicate,
-    missing value, validation, and outlier steps, and prepares data for scaling.
+    Ingestion & cleaning pipeline. Cleans data, generates advanced features, 
+    standards features using StandardScaler, and dumps the scaler to disk.
     """
     print(f"\nStarting ingestion pipeline for: {raw_csv_path}")
     
@@ -78,87 +35,92 @@ def run_preprocessing_pipeline(raw_csv_path: str, output_csv_path: str = CLEANED
     df = pd.read_csv(raw_csv_path)
     
     # 1. Deduplication
-    initial_len = len(df)
     df = df.drop_duplicates().reset_index(drop=True)
-    dedup_len = len(df)
-    if initial_len != dedup_len:
-        print(f"-> Removed {initial_len - dedup_len} duplicate records.")
+    
+    # 2. Timestamp sorting
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df = df.sort_values(by="timestamp").reset_index(drop=True)
+    
+    # 3. Missing Value Imputation
+    df[BASE_FEATURES] = df[BASE_FEATURES].ffill().bfill()
+    if TARGET in df.columns:
+        df[TARGET] = df[TARGET].ffill().bfill()
         
-    # 2. Convert and sort timestamps
-    df = convert_and_sort_timestamps(df)
-    
-    # 3. Impute missing values
-    df = clean_missing_values(df)
-    
-    # 4. Range and Outlier mitigation
-    df = detect_and_handle_outliers(df)
-    
-    # 5. Schema Validation (Run validation checks on preprocessed dataset)
-    # The validation ensures that after preprocessing, data is fully ready for modeling.
+    # 4. Outlier mitigation
+    for col in BASE_FEATURES:
+        if col in ["cpu_usage", "memory_usage", "error_rate"]:
+            df[col] = df[col].clip(0.0, 100.0)
+        else:
+            df[col] = df[col].clip(lower=0.0)
+            
+    # 5. Schema Validation on clean base data
     validate_dataset(df, raise_exception=True)
     
-    # 6. Fit and Save Scaler
-    print("-> Standardizing/Scaling numeric features...")
+    # 6. Apply Feature Engineering
+    print("-> Applying advanced feature engineering...")
+    df_engineered = apply_feature_engineering_pipeline(df, is_training=True)
+    
+    # Extract the exact feature list (excluding target, timestamp, and metadata like intermediate time variables)
+    exclude_cols = [TARGET, "timestamp"]
+    model_features = [col for col in df_engineered.columns if col not in exclude_cols]
+    
+    # Save the feature list to disk so the API knows the exact column order
+    joblib.dump(model_features, "artifacts/features_list.pkl")
+    print(f"-> Saved model features list (Total {len(model_features)} features) to artifacts/features_list.pkl")
+    
+    # 7. Fit and Save Scaler
+    print("-> Standardizing/Scaling all engineered features...")
     scaler = StandardScaler()
-    scaler.fit(df[FEATURES])
+    scaler.fit(df_engineered[model_features])
     
     os.makedirs(os.path.dirname(SCALER_PATH), exist_ok=True)
     joblib.dump(scaler, SCALER_PATH)
     print(f"-> Saved fitted StandardScaler object to {SCALER_PATH}")
     
     # Save the cleaned dataset to disk
-    os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
-    df.to_csv(output_csv_path, index=False)
-    print(f"-> Cleaned dataset saved to {output_csv_path}")
+    df_engineered.to_csv(output_csv_path, index=False)
+    print(f"-> Cleaned & engineered dataset saved to {output_csv_path}. Shape: {df_engineered.shape}")
     
-    return df
+    return df_engineered
 
-def preprocess_single_record(record: dict, scaler: StandardScaler = None) -> np.ndarray:
+def preprocess_single_record(history_df: pd.DataFrame, scaler: StandardScaler = None) -> np.ndarray:
     """
-    Preprocesses and scales a single live telemetry record for real-time inference.
+    Preprocesses a single live metric record by applying feature engineering 
+    across the historical context buffer and returning the scaled vector for the latest record.
     """
-    # 1. Input Validation using business rules
-    errors = []
-    for col in FEATURES:
-        if col not in record:
-            errors.append(f"Missing required metric: '{col}'")
-            continue
-        try:
-            val = float(record[col])
-            # Basic validation checks
-            if col in ["cpu_usage", "memory_usage"] and (val < 0 or val > 100):
-                errors.append(f"'{col}' must be between 0 and 100. Received: {val}")
-            elif val < 0:
-                errors.append(f"'{col}' must be non-negative. Received: {val}")
-        except (ValueError, TypeError):
-            errors.append(f"'{col}' must be numeric. Received: {record[col]}")
-            
-    if errors:
-        raise DatasetValidationError("Real-time metric validation failed:\n- " + "\n- ".join(errors))
-        
-    # 2. Structure as DataFrame to match fit shapes
-    record_df = pd.DataFrame([{col: float(record[col]) for col in FEATURES}])
-    
-    # 3. Clip any bounds
-    for col in FEATURES:
+    # 1. Clean history base values (impute, clip)
+    df = history_df.copy()
+    df[BASE_FEATURES] = df[BASE_FEATURES].ffill().bfill()
+    for col in BASE_FEATURES:
         if col in ["cpu_usage", "memory_usage", "error_rate"]:
-            record_df[col] = record_df[col].clip(0.0, 100.0)
+            df[col] = df[col].clip(0.0, 100.0)
         else:
-            record_df[col] = record_df[col].clip(lower=0.0)
+            df[col] = df[col].clip(lower=0.0)
             
-    # 4. Scale inputs
+    # 2. Run feature engineering (is_training=False preserves all records, filling NaNs)
+    df_engineered = apply_feature_engineering_pipeline(df, is_training=False)
+    
+    # 3. Load feature names order
+    features_list_path = "artifacts/features_list.pkl"
+    if os.path.exists(features_list_path):
+        model_features = joblib.load(features_list_path)
+    else:
+        raise FileNotFoundError(f"Feature list file not found at: {features_list_path}")
+        
+    # 4. Extract the latest record (which now contains complete lag/rolling values computed from history)
+    latest_record = df_engineered.iloc[[-1]][model_features]
+    
+    # 5. Scale using standardizer
     if scaler is None:
         if os.path.exists(SCALER_PATH):
             scaler = joblib.load(SCALER_PATH)
         else:
-            raise FileNotFoundError(f"Fitted scaler not found at: {SCALER_PATH}. Run batch pipeline first.")
+            raise FileNotFoundError(f"Scaler file not found at: {SCALER_PATH}")
             
-    scaled_features = scaler.transform(record_df[FEATURES])
-    return scaled_features
+    scaled_vector = scaler.transform(latest_record)
+    return scaled_vector
 
 if __name__ == "__main__":
-    # Test batch pipeline
-    # (Ensure to generate raw data first)
     from src.generator import generate_synthetic_workload
     generate_synthetic_workload()
     run_preprocessing_pipeline("data/synthetic_workload.csv")
