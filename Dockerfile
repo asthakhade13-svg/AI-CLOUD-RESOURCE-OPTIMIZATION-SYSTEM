@@ -14,9 +14,10 @@ COPY requirements.txt /app/
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# Copy application source modules, serialized artifacts, and backend script
+COPY src/ /app/src/
+COPY artifacts/ /app/artifacts/
 COPY main.py /app/
-COPY cloud_resource_optimization_model.pkl /app/
 
 # Expose port 8000 for FastAPI
 EXPOSE 8000

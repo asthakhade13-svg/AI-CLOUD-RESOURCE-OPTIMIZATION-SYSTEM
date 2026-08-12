@@ -10,3 +10,9 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Pytest cache
+.pytest_cache/
+
+# Datasets
+data/*.csv
