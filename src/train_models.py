@@ -3,10 +3,12 @@ import numpy as np
 import os
 import time
 import joblib
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
 
 CLEANED_DATA_PATH = "data/cleaned_workload.csv"
 SCALER_PATH = "artifacts/scaler.pkl"
@@ -14,31 +16,40 @@ FEATURES_LIST_PATH = "artifacts/features_list.pkl"
 MODEL_PATH = "artifacts/cloud_resource_optimization_model.pkl"
 TARGET = "required_servers"
 
-def print_feature_importance_analysis(rf_model, xgb_model, feature_names):
+def print_feature_importance_analysis(model, feature_names):
     """
-    Extracts and prints the top 15 features by importance for both models.
-    Provides explanations for why these features are useful.
+    Extracts and prints the top 15 features by importance for the selected best model,
+    if the model supports feature importances.
     """
     print("\n======================= FEATURE IMPORTANCE ANALYSIS =======================")
     
-    # Extract importances
-    rf_importances = rf_model.feature_importances_
-    xgb_importances = xgb_model.feature_importances_
-    
-    importance_df = pd.DataFrame({
-        "Feature": feature_names,
-        "Random Forest": rf_importances,
-        "XGBoost": xgb_importances
-    })
-    
-    # Sort by Random Forest importance
-    rf_sorted = importance_df.sort_values(by="Random Forest", ascending=False).head(15)
-    
-    print(f"{'Rank':<4} | {'Feature Name':<30} | {'RF MDI':<10} | {'XGBoost Weight':<14}")
-    print("-" * 68)
-    for rank, (_, row) in enumerate(rf_sorted.iterrows(), 1):
-        print(f"{rank:<4} | {row['Feature']:<30} | {row['Random Forest']:<10.4f} | {row['XGBoost']:<14.4f}")
-    
+    if hasattr(model, "feature_importances_"):
+        importances = model.feature_importances_
+        importance_df = pd.DataFrame({
+            "Feature": feature_names,
+            "Importance": importances
+        }).sort_values(by="Importance", ascending=False).head(15)
+        
+        print(f"{'Rank':<4} | {'Feature Name':<30} | {'MDI Importance':<14}")
+        print("-" * 55)
+        for rank, (_, row) in enumerate(importance_df.iterrows(), 1):
+            print(f"{rank:<4} | {row['Feature']:<30} | {row['Importance']:<14.4f}")
+    elif hasattr(model, "coef_"):
+        # For linear model, use coefficients as proxy for importance
+        importances = np.abs(model.coef_)
+        importance_df = pd.DataFrame({
+            "Feature": feature_names,
+            "Importance": importances
+        }).sort_values(by="Importance", ascending=False).head(15)
+        
+        print(f"{'Rank':<4} | {'Feature Name':<30} | {'Absolute Coefficient':<20}")
+        print("-" * 60)
+        for rank, (_, row) in enumerate(importance_df.iterrows(), 1):
+            print(f"{rank:<4} | {row['Feature']:<30} | {row['Importance']:<20.4f}")
+    else:
+        print("Selected model does not directly support feature importance or coefficient extraction.")
+        return
+
     print("\n* Key Insights on Feature Utility for Predictive Scaling:")
     print("1. Lag Features (e.g. active_users_lag_1, cpu_usage_lag_5):")
     print("   -> Captures autocorrelation. A high CPU usage in the immediate past (t-1) strongly indicates high resource demands at time t.")
@@ -50,10 +61,43 @@ def print_feature_importance_analysis(rf_model, xgb_model, feature_names):
     print("   -> Allows the model to predict resource scale based on daily/weekly cycles (e.g. lunch hour peaks, night drops).")
     print("===========================================================================")
 
+def generate_capacity_plots(best_model, X_test, y_test, y_preds, best_name):
+    """Generates evaluation plots for the selected best capacity model."""
+    plots_dir = "data/plots"
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # 1. Actual vs Predicted required servers (slice of 100 observations)
+    plt.figure(figsize=(12, 5))
+    plt.step(np.arange(100), y_test[:100], where="post", color="black", linewidth=2.5, label="Actual Servers")
+    plt.step(np.arange(100), y_preds[:100], where="post", color="#1f77b4", linestyle="--", alpha=0.9, label=f"Predicted ({best_name})")
+    plt.title(f"Capacity Prediction: Actual vs. Predicted Required Servers ({best_name})", fontsize=14, fontweight="bold", pad=15)
+    plt.xlabel("Sample Timeline (5-Min Steps)", fontsize=11)
+    plt.ylabel("Server Quantity", fontsize=11)
+    plt.grid(True, linestyle=":", alpha=0.6)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, "capacity_actual_vs_predicted.png"), dpi=150)
+    plt.close()
+    print("-> Saved capacity_actual_vs_predicted.png")
+    
+    # 2. Residual error analysis
+    residuals = y_test - y_preds
+    plt.figure(figsize=(10, 5))
+    plt.hist(residuals, bins=30, color="#1f77b4", alpha=0.7, edgecolor="black")
+    plt.axvline(x=0, color="red", linestyle="--", linewidth=1.5)
+    plt.title(f"Capacity Predictor Error Residual Distribution ({best_name})", fontsize=14, fontweight="bold", pad=15)
+    plt.xlabel("Prediction Error (Actual - Predicted Server Count)", fontsize=11)
+    plt.ylabel("Frequency Count", fontsize=11)
+    plt.grid(True, linestyle=":", alpha=0.6)
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, "capacity_prediction_residuals.png"), dpi=150)
+    plt.close()
+    print("-> Saved capacity_prediction_residuals.png")
+
 def train_and_compare_models():
     """
-    Trains Random Forest and XGBoost regression models on the engineered feature dataset.
-    Performs feature importance analysis, outputs performance metrics, and saves the best model.
+    Loads preprocessed dataset, splits chronologically, scales features, trains 6 candidate algorithms,
+    ranks them on validation MAE, and automatically saves the best performing model to disk.
     """
     print("\nLoading dataset and features list for training...")
     if not os.path.exists(CLEANED_DATA_PATH):
@@ -64,78 +108,109 @@ def train_and_compare_models():
     df = pd.read_csv(CLEANED_DATA_PATH)
     features = joblib.load(FEATURES_LIST_PATH)
     
-    # 1. Feature Target Split
     X = df[features]
     y = df[TARGET]
     
-    # 2. Train-Test Split (80/20)
-    X_train_raw, X_test_raw, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+    # Chronological Split (Train: 70%, Val: 15%, Test: 15%)
+    n = len(df)
+    train_end = int(n * 0.70)
+    val_end = int(n * 0.85)
     
-    # 3. Scale Features using the saved standardizer
+    X_train_raw = X.iloc[:train_end]
+    y_train = y.iloc[:train_end]
+    
+    X_val_raw = X.iloc[train_end:val_end]
+    y_val = y.iloc[train_end:val_end]
+    
+    X_test_raw = X.iloc[val_end:]
+    y_test = y.iloc[val_end:]
+    
+    print(f"Time-aware split sizes -> Train: {len(X_train_raw)}, Val: {len(X_val_raw)}, Test: {len(X_test_raw)}")
+    
+    # Scale Features using standardizer
     if not os.path.exists(SCALER_PATH):
         raise FileNotFoundError(f"Fitted scaler not found at: {SCALER_PATH}")
         
     scaler = joblib.load(SCALER_PATH)
     X_train = scaler.transform(X_train_raw)
+    X_val = scaler.transform(X_val_raw)
     X_test = scaler.transform(X_test_raw)
     
-    # 4. Train Random Forest
-    print("\nTraining Random Forest Regressor on engineered features...")
-    rf_start = time.time()
-    rf = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
-    rf.fit(X_train, y_train)
-    rf_time = time.time() - rf_start
-    rf_preds = rf.predict(X_test)
+    # Define candidate models with fixed seeds for reproducibility
+    models = {
+        "Linear Regression": LinearRegression(),
+        "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
+        "Gradient Boosting": GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42),
+        "Extra Trees": ExtraTreesRegressor(n_estimators=100, random_state=42, n_jobs=-1),
+        "XGBoost": XGBRegressor(n_estimators=100, learning_rate=0.08, max_depth=5, random_state=42, n_jobs=-1),
+        "LightGBM": LGBMRegressor(n_estimators=100, learning_rate=0.08, random_state=42, n_jobs=-1, verbose=-1)
+    }
     
-    # 5. Train XGBoost
-    print("Training XGBoost Regressor on engineered features...")
-    xgb_start = time.time()
-    xgb = XGBRegressor(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42, n_jobs=-1)
-    xgb.fit(X_train, y_train)
-    xgb_time = time.time() - xgb_start
-    xgb_preds = xgb.predict(X_test)
+    results_list = []
+    trained_models = {}
     
-    # 6. Evaluation metrics
-    def evaluate(y_true, y_pred):
-        mae = mean_absolute_error(y_true, y_pred)
-        mse = mean_squared_error(y_true, y_pred)
-        rmse = np.sqrt(mse)
-        r2 = r2_score(y_true, y_pred)
-        return mae, rmse, r2
+    print("\nTraining and evaluating candidate capacity models...")
+    for name, model in models.items():
+        start_time = time.time()
+        model.fit(X_train, y_train)
+        duration = time.time() - start_time
         
-    rf_mae, rf_rmse, rf_r2 = evaluate(y_test, rf_preds)
-    xgb_mae, xgb_rmse, xgb_r2 = evaluate(y_test, xgb_preds)
+        # Predict on validation and test sets
+        val_preds = model.predict(X_val)
+        test_preds = model.predict(X_test)
+        
+        # Evaluate
+        val_mae = mean_absolute_error(y_val, val_preds)
+        val_rmse = np.sqrt(mean_squared_error(y_val, val_preds))
+        val_r2 = r2_score(y_val, val_preds)
+        
+        test_mae = mean_absolute_error(y_test, test_preds)
+        test_rmse = np.sqrt(mean_squared_error(y_test, test_preds))
+        test_r2 = r2_score(y_test, test_preds)
+        
+        trained_models[name] = {
+            "model_obj": model,
+            "test_preds": test_preds
+        }
+        
+        results_list.append({
+            "Model": name,
+            "Val MAE": val_mae,
+            "Val RMSE": val_rmse,
+            "Val R2": val_r2,
+            "Test MAE": test_mae,
+            "Test RMSE": test_rmse,
+            "Test R2": test_r2,
+            "Train Time (s)": duration
+        })
+        
+    # Construct comparison dataframe and sort by validation MAE (lower is better)
+    comparison_df = pd.DataFrame(results_list).sort_values(by="Val MAE", ascending=True).reset_index(drop=True)
     
-    print("\n======================= MODEL TRAIN & EVALUATION COMPARISON =======================")
-    print(f"{'Algorithm':<20} | {'MAE':<10} | {'RMSE':<10} | {'R2 Score':<10} | {'Train Time (s)':<15}")
-    print("-" * 75)
-    print(f"{'Random Forest':<20} | {rf_mae:<10.4f} | {rf_rmse:<10.4f} | {rf_r2:<10.4f} | {rf_time:<15.4f}")
-    print(f"{'XGBoost':<20} | {xgb_mae:<10.4f} | {xgb_rmse:<10.4f} | {xgb_r2:<10.4f} | {xgb_time:<15.4f}")
+    print("\n======================= AUTOMATED MODEL COMPARISON PIPELINE =======================")
+    print(comparison_df.to_string(index=False))
     print("===================================================================================")
     
-    # 7. Select best model
-    if xgb_r2 > rf_r2:
-        best_model = xgb
-        best_name = "XGBoost"
-        best_r2 = xgb_r2
-    else:
-        best_model = rf
-        best_name = "Random Forest"
-        best_r2 = rf_r2
-        
-    print(f"\nSelecting model with highest validation R2: {best_name} (R2={best_r2:.4f})")
+    # 7. Select and save the best model
+    best_row = comparison_df.iloc[0]
+    best_name = best_row["Model"]
+    best_model_obj = trained_models[best_name]["model_obj"]
+    best_test_preds = trained_models[best_name]["test_preds"]
+    
+    print(f"\nWinner selected automatically: {best_name} (Val MAE={best_row['Val MAE']:.4f})")
     
     # Save best model to disk
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-    joblib.dump(best_model, MODEL_PATH)
-    print(f"Saved best performing model to: {MODEL_PATH}")
+    joblib.dump(best_model_obj, MODEL_PATH)
+    print(f"Saved best performing capacity model to: {MODEL_PATH}")
     
-    # 8. Print Feature Importance Analysis
-    print_feature_importance_analysis(rf, xgb, features)
+    # 8. Generate evaluation plots
+    generate_capacity_plots(best_model_obj, X_test, y_test.values, best_test_preds, best_name)
     
-    return best_model
+    # 9. Output feature importances
+    print_feature_importance_analysis(best_model_obj, features)
+    
+    return best_model_obj
 
 if __name__ == "__main__":
     train_and_compare_models()
