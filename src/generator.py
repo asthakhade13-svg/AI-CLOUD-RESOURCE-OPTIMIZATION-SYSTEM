@@ -15,9 +15,9 @@ def generate_synthetic_workload(days=30, output_path="data/synthetic_workload.cs
     
     np.random.seed(seed)
     
-    # 1. Timestamps (Hourly)
-    periods = days * 24
-    time_index = pd.date_range(start="2026-08-01 00:00:00", periods=periods, freq="h")
+    # 1. Timestamps (5-Minute Intervals)
+    periods = days * 24 * 12
+    time_index = pd.date_range(start="2026-08-01 00:00:00", periods=periods, freq="5min")
     
     # Initialize metric containers
     timestamps = []

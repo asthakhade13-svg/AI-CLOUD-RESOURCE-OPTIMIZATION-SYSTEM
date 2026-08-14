@@ -49,6 +49,9 @@ def test_predict_success(client):
         assert "predicted_required_servers" in data
         assert "scaling_action" in data
         assert "reasoning" in data
+        assert "predicted_cpu_5min" in data
+        assert "predicted_cpu_15min" in data
+        assert "forecasts" in data
         assert data["current_servers"] == 3
         assert data["predicted_required_servers"] >= 1
         assert data["scaling_action"] in ["SCALE UP", "SCALE DOWN", "NO ACTION NEEDED"]

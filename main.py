@@ -6,13 +6,14 @@ import pandas as pd
 import numpy as np
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from src.pipeline import BASE_FEATURES, preprocess_single_record, DatasetValidationError
+from src.forecasting import forecast_next_workloads, FORECAST_METRICS
 
 app = FastAPI(
     title="AI Cloud Resource Optimization API",
-    description="A FastAPI backend leveraging advanced feature engineering (lags, rolling stats, cyclical time) for autoscaling predictions.",
-    version="3.0.0"
+    description="A FastAPI backend leveraging two-stage predictive autoscaling: time-series workload forecasting + capacity modeling.",
+    version="4.0.0"
 )
 
 # Enable CORS for frontend integration
@@ -41,25 +42,25 @@ buffer_lock = threading.Lock()
 def load_assets_and_seed_buffer():
     global model, scaler, history_buffer
     
-    # 1. Load ML Model
+    # 1. Load Capacity Predictor Model (Stage 2)
     if os.path.exists(MODEL_PATH):
         try:
             model = joblib.load(MODEL_PATH)
-            print("Model loaded successfully on startup.")
+            print("Capacity Predictor loaded successfully.")
         except Exception as e:
-            print(f"Error loading model on startup: {e}")
+            print(f"Error loading capacity model: {e}")
     else:
-        print(f"Warning: Model file '{MODEL_PATH}' not found. Please train the model first.")
+        print(f"Warning: Capacity model file '{MODEL_PATH}' not found.")
         
     # 2. Load Scaler
     if os.path.exists(SCALER_PATH):
         try:
             scaler = joblib.load(SCALER_PATH)
-            print("Scaler loaded successfully on startup.")
+            print("Scaler loaded successfully.")
         except Exception as e:
-            print(f"Error loading scaler on startup: {e}")
+            print(f"Error loading scaler: {e}")
     else:
-        print(f"Warning: Scaler file '{SCALER_PATH}' not found. Please run the preprocessing pipeline first.")
+        print(f"Warning: Scaler file '{SCALER_PATH}' not found.")
         
     # 3. Seed the Sliding Window History Buffer (requires 30 past observations to compute rolling/lag features)
     with buffer_lock:
@@ -68,23 +69,20 @@ def load_assets_and_seed_buffer():
                 # Load columns representing raw telemetry metrics
                 raw_columns = ["timestamp"] + BASE_FEATURES
                 df_clean = pd.read_csv(CLEANED_DATA_PATH)
-                
-                # If required_servers target column is in the CSV but not needed for predict features,
-                # we drop it and filter to the expected columns
                 available_cols = [c for c in raw_columns if c in df_clean.columns]
+                # Seed with the last 30 observations (representing 150 minutes of history at 5-minute intervals)
                 history_buffer = df_clean[available_cols].tail(30).reset_index(drop=True)
                 print(f"History buffer successfully seeded with {len(history_buffer)} records from cleaned workload history.")
             except Exception as e:
                 print(f"Error seeding history buffer: {e}")
-                # Initialize empty structure
                 history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
         else:
             print(f"Warning: Cleaned workload CSV '{CLEANED_DATA_PATH}' not found. History buffer initialized empty.")
             history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
 
 class PredictionInput(BaseModel):
-    cpu_usage: float = Field(..., ge=0, le=100, description="CPU usage percentage (0-100)", json_schema_extra={"example": 75.0})
-    memory_usage: float = Field(..., ge=0, le=100, description="Memory usage percentage (0-100)", json_schema_extra={"example": 80.0})
+    cpu_usage: float = Field(..., ge=0, le=100, description="CPU usage percentage (0-100)", json_schema_extra={"example": 68.0})
+    memory_usage: float = Field(..., ge=0, le=100, description="Memory usage percentage (0-100)", json_schema_extra={"example": 72.0})
     network_in: float = Field(..., ge=0, description="Network In throughput (Mbps)", json_schema_extra={"example": 100.0})
     network_out: float = Field(..., ge=0, description="Network Out throughput (Mbps)", json_schema_extra={"example": 250.0})
     network_traffic: float = Field(None, ge=0, description="Total traffic (Mbps). If omitted, calculated as network_in + network_out.", json_schema_extra={"example": 350.0})
@@ -94,20 +92,27 @@ class PredictionInput(BaseModel):
     request_rate: float = Field(..., ge=0, description="Requests per second", json_schema_extra={"example": 625.0})
     response_time: float = Field(..., ge=0, description="Average response latency (ms)", json_schema_extra={"example": 185.0})
     error_rate: float = Field(..., ge=0, le=100, description="Error rate percentage (0-100)", json_schema_extra={"example": 0.05})
-    current_servers: int = Field(..., ge=1, description="Current number of active servers", json_schema_extra={"example": 4})
-    server_cost: float = Field(..., ge=0, description="Current server hosting cost ($/hour)", json_schema_extra={"example": 0.487})
+    current_servers: int = Field(..., ge=1, description="Current number of active servers", json_schema_extra={"example": 5})
+    server_cost: float = Field(..., ge=0, description="Current server hosting cost ($/hour)", json_schema_extra={"example": 0.60})
 
 class PredictionOutput(BaseModel):
-    predicted_required_servers: int = Field(..., description="The recommended number of servers required.")
-    raw_prediction: float = Field(..., description="The raw continuous output from the regression model.")
+    current_cpu: float = Field(..., description="The current CPU usage.")
+    predicted_cpu_5min: float = Field(..., description="Forecasted CPU usage in 5 minutes.")
+    predicted_cpu_10min: float = Field(..., description="Forecasted CPU usage in 10 minutes.")
+    predicted_cpu_15min: float = Field(..., description="Forecasted CPU usage in 15 minutes.")
+    
     current_servers: int = Field(..., description="The input number of current servers.")
-    scaling_action: str = Field(..., description="Recommended scaling action: SCALE UP, SCALE DOWN, or NO ACTION NEEDED.")
-    reasoning: str = Field(..., description="Text rationale explaining the recommendation.")
+    predicted_required_servers: int = Field(..., description="Proactive server capacity required in 15 minutes.")
+    
+    scaling_action: str = Field(..., description="Proactive scaling action: SCALE UP, SCALE DOWN, or NO ACTION NEEDED.")
+    reasoning: str = Field(..., description="Detailed prediction summary and recommendation.")
+    
+    forecasts: dict = Field(..., description="Full multi-horizon forecasts mapping metrics to time intervals.")
 
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to the AI Cloud Resource Optimization API v3.0 (Stateful Feature Engineering)",
+        "message": "Welcome to the AI Cloud Resource Optimization API v4.0 (Predictive Autoscaling)",
         "docs_url": "/docs",
         "health_check_url": "/health",
         "model_loaded": model is not None,
@@ -118,9 +123,9 @@ def read_root():
 @app.get("/health")
 def health_check():
     if model is None:
-        raise HTTPException(status_code=503, detail="Model is not loaded. Please train the model.")
+        raise HTTPException(status_code=503, detail="Capacity model is not loaded. Please train models.")
     if scaler is None:
-        raise HTTPException(status_code=503, detail="Scaler is not loaded. Please run pipeline first.")
+        raise HTTPException(status_code=503, detail="Scaler is not loaded. Please run pipeline.")
     return {
         "status": "healthy",
         "model_file": MODEL_PATH,
@@ -133,64 +138,99 @@ def health_check():
 def predict(payload: PredictionInput):
     global model, scaler, history_buffer
     
-    # 1. Check assets
+    # 1. Asset check
     if model is None or scaler is None:
         raise HTTPException(
             status_code=503,
             detail="ML model or preprocessor assets not loaded. Run pipeline and training scripts first."
         )
         
-    # 2. Extract inputs and compute network_traffic if missing
+    # 2. Extract input record and compute traffic
     input_dict = payload.dict()
     if input_dict.get("network_traffic") is None:
         input_dict["network_traffic"] = input_dict["network_in"] + input_dict["network_out"]
         
-    # Attach current timestamp for cyclical extraction
-    input_dict["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Standardize timestamp for calculations
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    input_dict["timestamp"] = now_str
     
     try:
-        # Create single row DataFrame
         new_row_df = pd.DataFrame([input_dict])
         
-        # 3. Thread-safe buffer update and stateful feature engineering
+        # 3. Update history buffer and calculate time-series forecast (Stage 1)
         with buffer_lock:
-            # Append new record to historical dataframe
+            # Append new record to history
             combined_df = pd.concat([history_buffer, new_row_df], ignore_index=True)
-            # Keep sliding window context: last 30 hours of history + 1 new row = 31 records maximum
-            context_df = combined_df.tail(31).reset_index(drop=True)
+            context_df = combined_df.tail(30).reset_index(drop=True)
             
-            # Preprocess the entire context window, which computes lags/moving stats 
-            # and returns the scaled feature vector of the latest row
-            scaled_input = preprocess_single_record(context_df, scaler)
+            # Forecast next workloads (outputs dictionary: 5min, 10min, 15min)
+            forecasts = forecast_next_workloads(context_df)
             
-            # Update history buffer (slide forward, keeping only base features and timestamp)
+            # Slide history buffer forward
             raw_cols = ["timestamp"] + BASE_FEATURES
             history_buffer = context_df[raw_cols].tail(30).reset_index(drop=True)
             
-        # 4. Generate prediction using the best model trained on engineered features
-        raw_pred = model.predict(scaled_input)[0]
-        required_servers = int(np.round(raw_pred))
-        required_servers = max(1, required_servers)  # Ensure at least 1 server runs
+        # 4. Proactive Server Capacity Projection (Stage 2)
+        # We construct a projected 15-minute ahead telemetry row
+        # We use the 15-minute forecasted values for: CPU, Memory, Traffic, Users, Request Rate, Latency
+        # For the rest (ingress/egress traffic split, disk IOPS, errors, cost), we keep them constant
+        proj_15 = input_dict.copy()
         
-        # 5. Determine Scaling Action
-        if required_servers > payload.current_servers:
+        # Override with Stage 1 forecast results
+        fc_15 = forecasts["15min"]
+        proj_15["cpu_usage"] = fc_15["cpu_usage"]
+        proj_15["memory_usage"] = fc_15["memory_usage"]
+        proj_15["network_traffic"] = fc_15["network_traffic"]
+        proj_15["active_users"] = int(np.round(fc_15["active_users"]))
+        proj_15["request_rate"] = fc_15["request_rate"]
+        proj_15["response_time"] = fc_15["response_time"]
+        
+        # Adjust timestamp forward by 15 minutes
+        future_dt = datetime.strptime(now_str, "%Y-%m-%d %H:%M:%S") + timedelta(minutes=15)
+        proj_15["timestamp"] = future_dt.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Append projected future row to context
+        proj_df = pd.DataFrame([proj_15])
+        projected_context = pd.concat([context_df, proj_df], ignore_index=True).tail(31).reset_index(drop=True)
+        
+        # Run features transformation on projected context
+        scaled_projected_input = preprocess_single_record(projected_context, scaler)
+        
+        # Generate Proactive Server Capacity Prediction
+        raw_pred = model.predict(scaled_projected_input)[0]
+        predicted_required_servers = int(np.round(raw_pred))
+        predicted_required_servers = max(1, predicted_required_servers)
+        
+        # 5. Proactive Scaling Recommendation
+        curr_servers = payload.current_servers
+        if predicted_required_servers > curr_servers:
             action = "SCALE UP"
-            diff = required_servers - payload.current_servers
-            reasoning = f"Current workload trends suggest scaling up to {required_servers} servers (Add {diff} server(s))."
-        elif required_servers < payload.current_servers:
+            reasoning = (
+                f"Workload forecasting detects incoming spike. "
+                f"Predicted CPU: {fc_15['cpu_usage']:.1f}% in 15 mins. "
+                f"Proactive Recommendation: SCALE UP BEFORE WORKLOAD SPIKE."
+            )
+        elif predicted_required_servers < curr_servers:
             action = "SCALE DOWN"
-            diff = payload.current_servers - required_servers
-            reasoning = f"Workload demand has stabilized. Scaling down to {required_servers} servers (Remove {diff} server(s)) to minimize costs."
+            reasoning = (
+                f"Workload forecasting detects load reduction. "
+                f"Predicted CPU: {fc_15['cpu_usage']:.1f}% in 15 mins. "
+                f"Proactive Recommendation: SCALE DOWN to save hosting costs."
+            )
         else:
             action = "NO ACTION NEEDED"
-            reasoning = "System resources are perfectly balanced and optimized for the current demand trends."
+            reasoning = "System resources are projected to remain fully optimized over the 15-minute horizon."
             
         return PredictionOutput(
-            predicted_required_servers=required_servers,
-            raw_prediction=float(raw_pred),
-            current_servers=payload.current_servers,
+            current_cpu=payload.cpu_usage,
+            predicted_cpu_5min=round(forecasts["5min"]["cpu_usage"], 2),
+            predicted_cpu_10min=round(forecasts["10min"]["cpu_usage"], 2),
+            predicted_cpu_15min=round(forecasts["15min"]["cpu_usage"], 2),
+            current_servers=curr_servers,
+            predicted_required_servers=predicted_required_servers,
             scaling_action=action,
-            reasoning=reasoning
+            reasoning=reasoning,
+            forecasts=forecasts
         )
     except DatasetValidationError as ve:
         raise HTTPException(status_code=422, detail=str(ve))
@@ -204,7 +244,6 @@ def get_features():
         raise HTTPException(status_code=503, detail="Model is not loaded.")
         
     try:
-        # Load feature names dynamically from saved list
         features_list_path = "artifacts/features_list.pkl"
         if os.path.exists(features_list_path):
             features = joblib.load(features_list_path)
