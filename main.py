@@ -9,11 +9,12 @@ import threading
 from datetime import datetime, timedelta
 from src.pipeline import BASE_FEATURES, preprocess_single_record, DatasetValidationError
 from src.forecasting import forecast_next_workloads, FORECAST_METRICS
+from src.capacity import calculate_required_servers, estimate_prediction_uncertainty
 
 app = FastAPI(
     title="AI Cloud Resource Optimization API",
-    description="A FastAPI backend leveraging two-stage predictive autoscaling: time-series workload forecasting + capacity modeling.",
-    version="4.0.0"
+    description="A FastAPI backend leveraging two-stage predictive autoscaling and risk-managed capacity planning.",
+    version="5.0.0"
 )
 
 # Enable CORS for frontend integration
@@ -70,9 +71,9 @@ def load_assets_and_seed_buffer():
                 raw_columns = ["timestamp"] + BASE_FEATURES
                 df_clean = pd.read_csv(CLEANED_DATA_PATH)
                 available_cols = [c for c in raw_columns if c in df_clean.columns]
-                # Seed with the last 30 observations (representing 150 minutes of history at 5-minute intervals)
+                # Seed with the last 30 observations
                 history_buffer = df_clean[available_cols].tail(30).reset_index(drop=True)
-                print(f"History buffer successfully seeded with {len(history_buffer)} records from cleaned workload history.")
+                print(f"History buffer successfully seeded with {len(history_buffer)} records.")
             except Exception as e:
                 print(f"Error seeding history buffer: {e}")
                 history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
@@ -81,6 +82,7 @@ def load_assets_and_seed_buffer():
             history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
 
 class PredictionInput(BaseModel):
+    # Telemetry
     cpu_usage: float = Field(..., ge=0, le=100, description="CPU usage percentage (0-100)", json_schema_extra={"example": 68.0})
     memory_usage: float = Field(..., ge=0, le=100, description="Memory usage percentage (0-100)", json_schema_extra={"example": 72.0})
     network_in: float = Field(..., ge=0, description="Network In throughput (Mbps)", json_schema_extra={"example": 100.0})
@@ -94,6 +96,11 @@ class PredictionInput(BaseModel):
     error_rate: float = Field(..., ge=0, le=100, description="Error rate percentage (0-100)", json_schema_extra={"example": 0.05})
     current_servers: int = Field(..., ge=1, description="Current number of active servers", json_schema_extra={"example": 5})
     server_cost: float = Field(..., ge=0, description="Current server hosting cost ($/hour)", json_schema_extra={"example": 0.60})
+    
+    # Capacity Limits and Safety Parameters
+    min_servers: int = Field(1, ge=1, description="Minimum server lower bound limit", json_schema_extra={"example": 1})
+    max_servers: int = Field(20, ge=1, description="Maximum server upper bound limit", json_schema_extra={"example": 20})
+    safety_margin: float = Field(0.10, ge=0.0, le=1.0, description="Autoscaling safety margin multiplier (e.g. 0.10 = 10%)", json_schema_extra={"example": 0.10})
 
 class PredictionOutput(BaseModel):
     current_cpu: float = Field(..., description="The current CPU usage.")
@@ -102,7 +109,15 @@ class PredictionOutput(BaseModel):
     predicted_cpu_15min: float = Field(..., description="Forecasted CPU usage in 15 minutes.")
     
     current_servers: int = Field(..., description="The input number of current servers.")
-    predicted_required_servers: int = Field(..., description="Proactive server capacity required in 15 minutes.")
+    predicted_servers: float = Field(..., description="Raw continuous statistical prediction from ML model.")
+    recommended_servers: int = Field(..., description="Proactive server capacity recommended after safety margins & ceiling logic.")
+    
+    safety_margin: float = Field(..., description="The safety margin percentage multiplier applied.")
+    safety_buffer: float = Field(..., description="The fractional server count added as a safety buffer.")
+    
+    prediction_uncertainty_std: float = Field(..., description="Standard deviation of individual estimator predictions (RF uncertainty).")
+    confidence_interval_lower: float = Field(..., description="95% Confidence Interval lower bound of predictions.")
+    confidence_interval_upper: float = Field(..., description="95% Confidence Interval upper bound of predictions.")
     
     scaling_action: str = Field(..., description="Proactive scaling action: SCALE UP, SCALE DOWN, or NO ACTION NEEDED.")
     reasoning: str = Field(..., description="Detailed prediction summary and recommendation.")
@@ -112,7 +127,7 @@ class PredictionOutput(BaseModel):
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to the AI Cloud Resource Optimization API v4.0 (Predictive Autoscaling)",
+        "message": "Welcome to the AI Cloud Resource Optimization API v5.0 (Safe Capacity Planning)",
         "docs_url": "/docs",
         "health_check_url": "/health",
         "model_loaded": model is not None,
@@ -147,15 +162,18 @@ def predict(payload: PredictionInput):
         
     # 2. Extract input record and compute traffic
     input_dict = payload.dict()
-    if input_dict.get("network_traffic") is None:
-        input_dict["network_traffic"] = input_dict["network_in"] + input_dict["network_out"]
+    # Filter keys to exclude Pydantic-only capacity parameters when updating the history DataFrame
+    base_input_dict = {k: v for k, v in input_dict.items() if k not in ["min_servers", "max_servers", "safety_margin"]}
+    
+    if base_input_dict.get("network_traffic") is None:
+        base_input_dict["network_traffic"] = base_input_dict["network_in"] + base_input_dict["network_out"]
         
-    # Standardize timestamp for calculations
+    # Standardize timestamp
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    input_dict["timestamp"] = now_str
+    base_input_dict["timestamp"] = now_str
     
     try:
-        new_row_df = pd.DataFrame([input_dict])
+        new_row_df = pd.DataFrame([base_input_dict])
         
         # 3. Update history buffer and calculate time-series forecast (Stage 1)
         with buffer_lock:
@@ -171,12 +189,8 @@ def predict(payload: PredictionInput):
             history_buffer = context_df[raw_cols].tail(30).reset_index(drop=True)
             
         # 4. Proactive Server Capacity Projection (Stage 2)
-        # We construct a projected 15-minute ahead telemetry row
-        # We use the 15-minute forecasted values for: CPU, Memory, Traffic, Users, Request Rate, Latency
-        # For the rest (ingress/egress traffic split, disk IOPS, errors, cost), we keep them constant
-        proj_15 = input_dict.copy()
-        
-        # Override with Stage 1 forecast results
+        # Construct projected 15-minute ahead telemetry row
+        proj_15 = base_input_dict.copy()
         fc_15 = forecasts["15min"]
         proj_15["cpu_usage"] = fc_15["cpu_usage"]
         proj_15["memory_usage"] = fc_15["memory_usage"]
@@ -196,25 +210,35 @@ def predict(payload: PredictionInput):
         # Run features transformation on projected context
         scaled_projected_input = preprocess_single_record(projected_context, scaler)
         
-        # Generate Proactive Server Capacity Prediction
+        # Generate raw ML prediction
         raw_pred = model.predict(scaled_projected_input)[0]
-        predicted_required_servers = int(np.round(raw_pred))
-        predicted_required_servers = max(1, predicted_required_servers)
         
-        # 5. Proactive Scaling Recommendation
+        # 5. Safe Capacity Calculation & Uncertainty estimation
+        capacity = calculate_required_servers(
+            prediction=raw_pred,
+            current_servers=payload.current_servers,
+            min_servers=payload.min_servers,
+            max_servers=payload.max_servers,
+            safety_margin=payload.safety_margin
+        )
+        
+        uncertainty = estimate_prediction_uncertainty(model, scaled_projected_input)
+        recommended_servers = capacity["recommended_servers"]
+        
+        # 6. Proactive Scaling Recommendation
         curr_servers = payload.current_servers
-        if predicted_required_servers > curr_servers:
+        if recommended_servers > curr_servers:
             action = "SCALE UP"
             reasoning = (
-                f"Workload forecasting detects incoming spike. "
-                f"Predicted CPU: {fc_15['cpu_usage']:.1f}% in 15 mins. "
+                f"Proactive scaling triggered. Predicted CPU: {fc_15['cpu_usage']:.1f}% in 15 mins. "
+                f"ML raw prediction: {capacity['predicted_servers']:.2f} (safety buffer of +{capacity['safety_buffer']:.2f} applied). "
                 f"Proactive Recommendation: SCALE UP BEFORE WORKLOAD SPIKE."
             )
-        elif predicted_required_servers < curr_servers:
+        elif recommended_servers < curr_servers:
             action = "SCALE DOWN"
             reasoning = (
-                f"Workload forecasting detects load reduction. "
-                f"Predicted CPU: {fc_15['cpu_usage']:.1f}% in 15 mins. "
+                f"Proactive scaling triggered. Predicted CPU: {fc_15['cpu_usage']:.1f}% in 15 mins. "
+                f"ML raw prediction: {capacity['predicted_servers']:.2f} (safety buffer of +{capacity['safety_buffer']:.2f} applied). "
                 f"Proactive Recommendation: SCALE DOWN to save hosting costs."
             )
         else:
@@ -227,7 +251,13 @@ def predict(payload: PredictionInput):
             predicted_cpu_10min=round(forecasts["10min"]["cpu_usage"], 2),
             predicted_cpu_15min=round(forecasts["15min"]["cpu_usage"], 2),
             current_servers=curr_servers,
-            predicted_required_servers=predicted_required_servers,
+            predicted_servers=capacity["predicted_servers"],
+            recommended_servers=recommended_servers,
+            safety_margin=capacity["safety_margin"],
+            safety_buffer=capacity["safety_buffer"],
+            prediction_uncertainty_std=uncertainty["uncertainty_std"],
+            confidence_interval_lower=uncertainty["confidence_interval_lower"],
+            confidence_interval_upper=uncertainty["confidence_interval_upper"],
             scaling_action=action,
             reasoning=reasoning,
             forecasts=forecasts
