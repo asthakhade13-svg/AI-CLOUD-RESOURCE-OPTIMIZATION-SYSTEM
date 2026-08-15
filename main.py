@@ -10,11 +10,12 @@ from datetime import datetime, timedelta
 from src.pipeline import BASE_FEATURES, preprocess_single_record, DatasetValidationError
 from src.forecasting import forecast_next_workloads, FORECAST_METRICS
 from src.capacity import calculate_required_servers, estimate_prediction_uncertainty
+from src.controller import AutoscalingController
 
 app = FastAPI(
     title="AI Cloud Resource Optimization API",
-    description="A FastAPI backend leveraging two-stage predictive autoscaling and risk-managed capacity planning.",
-    version="5.0.0"
+    description="A FastAPI backend leveraging two-stage predictive autoscaling, risk-managed capacity planning, and a stateful anti-thrashing controller.",
+    version="6.0.0"
 )
 
 # Enable CORS for frontend integration
@@ -34,6 +35,7 @@ CLEANED_DATA_PATH = "data/cleaned_workload.csv"
 # Global variables to store loaded assets
 model = None
 scaler = None
+controller = None
 
 # Thread-safe sliding window buffer to cache the historical workload state
 history_buffer = None
@@ -41,7 +43,7 @@ buffer_lock = threading.Lock()
 
 @app.on_event("startup")
 def load_assets_and_seed_buffer():
-    global model, scaler, history_buffer
+    global model, scaler, history_buffer, controller
     
     # 1. Load Capacity Predictor Model (Stage 2)
     if os.path.exists(MODEL_PATH):
@@ -63,23 +65,25 @@ def load_assets_and_seed_buffer():
     else:
         print(f"Warning: Scaler file '{SCALER_PATH}' not found.")
         
-    # 3. Seed the Sliding Window History Buffer (requires 30 past observations to compute rolling/lag features)
+    # 3. Seed the Sliding Window History Buffer
     with buffer_lock:
         if os.path.exists(CLEANED_DATA_PATH):
             try:
-                # Load columns representing raw telemetry metrics
                 raw_columns = ["timestamp"] + BASE_FEATURES
                 df_clean = pd.read_csv(CLEANED_DATA_PATH)
                 available_cols = [c for c in raw_columns if c in df_clean.columns]
-                # Seed with the last 30 observations
                 history_buffer = df_clean[available_cols].tail(30).reset_index(drop=True)
-                print(f"History buffer successfully seeded with {len(history_buffer)} records.")
+                print(f"History buffer seeded with {len(history_buffer)} records.")
             except Exception as e:
                 print(f"Error seeding history buffer: {e}")
                 history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
         else:
             print(f"Warning: Cleaned workload CSV '{CLEANED_DATA_PATH}' not found. History buffer initialized empty.")
             history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
+
+    # 4. Initialize Stateful Autoscaling Controller
+    controller = AutoscalingController(current_servers=5)
+    print("Stateful Autoscaling Controller initialized.")
 
 class PredictionInput(BaseModel):
     # Telemetry
@@ -98,36 +102,49 @@ class PredictionInput(BaseModel):
     server_cost: float = Field(..., ge=0, description="Current server hosting cost ($/hour)", json_schema_extra={"example": 0.60})
     
     # Capacity Limits and Safety Parameters
-    min_servers: int = Field(1, ge=1, description="Minimum server lower bound limit", json_schema_extra={"example": 1})
-    max_servers: int = Field(20, ge=1, description="Maximum server upper bound limit", json_schema_extra={"example": 20})
+    min_servers: int = Field(1, ge=1, description="Minimum server limit", json_schema_extra={"example": 1})
+    max_servers: int = Field(20, ge=1, description="Maximum server limit", json_schema_extra={"example": 20})
     safety_margin: float = Field(0.10, ge=0.0, le=1.0, description="Autoscaling safety margin multiplier (e.g. 0.10 = 10%)", json_schema_extra={"example": 0.10})
+    
+    # Anti-Thrashing Controller Configurations (Optional overrides)
+    scale_up_cpu_threshold: float = Field(80.0, ge=0.0, le=100.0, description="CPU usage threshold to allow scale-up")
+    scale_down_cpu_threshold: float = Field(35.0, ge=0.0, le=100.0, description="CPU usage threshold to allow scale-down")
+    cooldown_periods: int = Field(3, ge=0, description="Cooldown periods (ticks) blocking scaling actions")
+    scale_up_confirmations: int = Field(3, ge=1, description="Consecutive ticks required to confirm scale-up")
+    scale_down_confirmations: int = Field(6, ge=1, description="Consecutive ticks required to confirm scale-down")
+    max_scale_up_step: int = Field(2, ge=1, description="Maximum servers added in a single scaling step")
+    max_scale_down_step: int = Field(1, ge=1, description="Maximum servers removed in a single scaling step")
 
 class PredictionOutput(BaseModel):
+    current_servers: int = Field(..., description="The current server count before evaluation.")
+    predicted_servers: float = Field(..., description="Raw continuous statistical prediction from ML model.")
+    recommended_servers: int = Field(..., description="Proactive server capacity after safety margins & controller state logic.")
+    
+    action: str = Field(..., description="The controller action: SCALE_UP, SCALE_DOWN, or NO_ACTION.")
+    scaling_action: str = Field(..., description="Alias for action to maintain backwards compatibility.")
+    reason: str = Field(..., description="Detailed description of the controller's decision reasoning.")
+    reasoning: str = Field(..., description="Alias for reason to maintain backwards compatibility.")
+    cooldown_active: bool = Field(..., description="Flag indicating if the controller is in cooldown state.")
+    
+    # Telemetry and metadata for diagnostic visibility
     current_cpu: float = Field(..., description="The current CPU usage.")
     predicted_cpu_5min: float = Field(..., description="Forecasted CPU usage in 5 minutes.")
     predicted_cpu_10min: float = Field(..., description="Forecasted CPU usage in 10 minutes.")
     predicted_cpu_15min: float = Field(..., description="Forecasted CPU usage in 15 minutes.")
     
-    current_servers: int = Field(..., description="The input number of current servers.")
-    predicted_servers: float = Field(..., description="Raw continuous statistical prediction from ML model.")
-    recommended_servers: int = Field(..., description="Proactive server capacity recommended after safety margins & ceiling logic.")
-    
     safety_margin: float = Field(..., description="The safety margin percentage multiplier applied.")
     safety_buffer: float = Field(..., description="The fractional server count added as a safety buffer.")
     
     prediction_uncertainty_std: float = Field(..., description="Standard deviation of individual estimator predictions (RF uncertainty).")
-    confidence_interval_lower: float = Field(..., description="95% Confidence Interval lower bound of predictions.")
-    confidence_interval_upper: float = Field(..., description="95% Confidence Interval upper bound of predictions.")
-    
-    scaling_action: str = Field(..., description="Proactive scaling action: SCALE UP, SCALE DOWN, or NO ACTION NEEDED.")
-    reasoning: str = Field(..., description="Detailed prediction summary and recommendation.")
+    confidence_interval_lower: float = Field(..., description="95% Confidence Interval lower bound.")
+    confidence_interval_upper: float = Field(..., description="95% Confidence Interval upper bound.")
     
     forecasts: dict = Field(..., description="Full multi-horizon forecasts mapping metrics to time intervals.")
 
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to the AI Cloud Resource Optimization API v5.0 (Safe Capacity Planning)",
+        "message": "Welcome to the AI Cloud Resource Optimization API v6.0 (Stateful Autoscaling Controller)",
         "docs_url": "/docs",
         "health_check_url": "/health",
         "model_loaded": model is not None,
@@ -151,19 +168,24 @@ def health_check():
 
 @app.post("/predict", response_model=PredictionOutput)
 def predict(payload: PredictionInput):
-    global model, scaler, history_buffer
+    global model, scaler, history_buffer, controller
     
     # 1. Asset check
-    if model is None or scaler is None:
+    if model is None or scaler is None or controller is None:
         raise HTTPException(
             status_code=503,
-            detail="ML model or preprocessor assets not loaded. Run pipeline and training scripts first."
+            detail="Autoscaling system dependencies not fully loaded."
         )
         
     # 2. Extract input record and compute traffic
     input_dict = payload.dict()
-    # Filter keys to exclude Pydantic-only capacity parameters when updating the history DataFrame
-    base_input_dict = {k: v for k, v in input_dict.items() if k not in ["min_servers", "max_servers", "safety_margin"]}
+    # Filter keys to exclude Pydantic-only parameters when updating the history DataFrame
+    exclude_keys = [
+        "min_servers", "max_servers", "safety_margin", 
+        "scale_up_cpu_threshold", "scale_down_cpu_threshold", "cooldown_periods",
+        "scale_up_confirmations", "scale_down_confirmations", "max_scale_up_step", "max_scale_down_step"
+    ]
+    base_input_dict = {k: v for k, v in input_dict.items() if k not in exclude_keys}
     
     if base_input_dict.get("network_traffic") is None:
         base_input_dict["network_traffic"] = base_input_dict["network_in"] + base_input_dict["network_out"]
@@ -223,43 +245,47 @@ def predict(payload: PredictionInput):
         )
         
         uncertainty = estimate_prediction_uncertainty(model, scaled_projected_input)
-        recommended_servers = capacity["recommended_servers"]
         
-        # 6. Proactive Scaling Recommendation
-        curr_servers = payload.current_servers
-        if recommended_servers > curr_servers:
-            action = "SCALE UP"
-            reasoning = (
-                f"Proactive scaling triggered. Predicted CPU: {fc_15['cpu_usage']:.1f}% in 15 mins. "
-                f"ML raw prediction: {capacity['predicted_servers']:.2f} (safety buffer of +{capacity['safety_buffer']:.2f} applied). "
-                f"Proactive Recommendation: SCALE UP BEFORE WORKLOAD SPIKE."
-            )
-        elif recommended_servers < curr_servers:
-            action = "SCALE DOWN"
-            reasoning = (
-                f"Proactive scaling triggered. Predicted CPU: {fc_15['cpu_usage']:.1f}% in 15 mins. "
-                f"ML raw prediction: {capacity['predicted_servers']:.2f} (safety buffer of +{capacity['safety_buffer']:.2f} applied). "
-                f"Proactive Recommendation: SCALE DOWN to save hosting costs."
-            )
-        else:
-            action = "NO ACTION NEEDED"
-            reasoning = "System resources are projected to remain fully optimized over the 15-minute horizon."
-            
+        # 6. Apply Stateful Anti-Thrashing Autoscaling Controller
+        # Dynamically sync controller configurations from payload settings
+        controller.min_servers = max(1, payload.min_servers)
+        controller.max_servers = max(controller.min_servers, payload.max_servers)
+        controller.scale_up_cpu_threshold = payload.scale_up_cpu_threshold
+        controller.scale_down_cpu_threshold = payload.scale_down_cpu_threshold
+        controller.cooldown_periods = payload.cooldown_periods
+        controller.scale_up_confirmations = payload.scale_up_confirmations
+        controller.scale_down_confirmations = payload.scale_down_confirmations
+        controller.max_scale_up_step = payload.max_scale_up_step
+        controller.max_scale_down_step = payload.max_scale_down_step
+        
+        # Synchronize starting server count with the payload's current state
+        controller.current_server_count = payload.current_servers
+        
+        # Execute decision logic
+        decision = controller.make_scaling_decision(
+            cpu_usage=payload.cpu_usage,
+            predicted_servers=capacity["predicted_servers"],
+            recommended_servers=capacity["recommended_servers"]
+        )
+        
         return PredictionOutput(
+            current_servers=payload.current_servers,
+            predicted_servers=capacity["predicted_servers"],
+            recommended_servers=decision["recommended_servers"],
+            action=decision["action"],
+            scaling_action=decision["action"],
+            reason=decision["reason"],
+            reasoning=decision["reason"],
+            cooldown_active=decision["cooldown_active"],
             current_cpu=payload.cpu_usage,
             predicted_cpu_5min=round(forecasts["5min"]["cpu_usage"], 2),
             predicted_cpu_10min=round(forecasts["10min"]["cpu_usage"], 2),
             predicted_cpu_15min=round(forecasts["15min"]["cpu_usage"], 2),
-            current_servers=curr_servers,
-            predicted_servers=capacity["predicted_servers"],
-            recommended_servers=recommended_servers,
             safety_margin=capacity["safety_margin"],
             safety_buffer=capacity["safety_buffer"],
             prediction_uncertainty_std=uncertainty["uncertainty_std"],
             confidence_interval_lower=uncertainty["confidence_interval_lower"],
             confidence_interval_upper=uncertainty["confidence_interval_upper"],
-            scaling_action=action,
-            reasoning=reasoning,
             forecasts=forecasts
         )
     except DatasetValidationError as ve:
