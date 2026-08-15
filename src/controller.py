@@ -33,7 +33,7 @@ class AutoscalingController:
         self.scale_up_consecutive_ticks = 0
         self.scale_down_consecutive_ticks = 0
 
-    def make_scaling_decision(self, cpu_usage: float, predicted_servers: float, recommended_servers: int) -> dict:
+    def make_scaling_decision(self, cpu_usage: float, predicted_servers: float, recommended_servers: int, sla_status: str = "HEALTHY") -> dict:
         """
         Evaluates the controller state machine and returns the scaling action decision.
         """
@@ -55,8 +55,8 @@ class AutoscalingController:
             }
 
         # 2. Check Scale-Up Condition
-        # Condition: Capacity recommendation is higher than current count AND CPU usage exceeds threshold
-        if recommended_servers > self.current_server_count and cpu_usage >= self.scale_up_cpu_threshold:
+        # Trigger scale-up if there is a recommended increase AND (CPU exceeds threshold OR SLA is violated/at-risk)
+        if recommended_servers > self.current_server_count and (cpu_usage >= self.scale_up_cpu_threshold or sla_status in ["VIOLATED", "AT_RISK"]):
             self.scale_up_consecutive_ticks += 1
             self.scale_down_consecutive_ticks = 0  # Reset scale down counters
             
@@ -73,12 +73,13 @@ class AutoscalingController:
                     self.current_server_count = new_servers
                     self.ticks_since_last_scaling = 0  # Enter cooldown
                     self.scale_up_consecutive_ticks = 0
+                    trigger_msg = f"High CPU ({cpu_usage:.1f}%)" if cpu_usage >= self.scale_up_cpu_threshold else f"SLA Warning ({sla_status})"
                     return {
                         "current_servers": old_servers,
                         "predicted_servers": float(predicted_servers),
                         "recommended_servers": self.current_server_count,
                         "action": "SCALE_UP",
-                        "reason": f"SCALE_UP triggered: High CPU ({cpu_usage:.1f}%) and capacity deficit confirmed for {self.scale_up_confirmations} consecutive observations. Scaled from {old_servers} to {new_servers} (max step limit applied).",
+                        "reason": f"SCALE_UP triggered: {trigger_msg} and capacity deficit confirmed for {self.scale_up_confirmations} consecutive observations. Scaled from {old_servers} to {new_servers} (max step limit applied).",
                         "cooldown_active": False
                     }
             else:
@@ -87,13 +88,13 @@ class AutoscalingController:
                     "predicted_servers": float(predicted_servers),
                     "recommended_servers": self.current_server_count,
                     "action": "NO_ACTION",
-                    "reason": f"High workload detected. Scale-up confirmation in progress ({self.scale_up_consecutive_ticks}/{self.scale_up_confirmations} observations).",
+                    "reason": f"High workload or SLA risk detected. Scale-up confirmation in progress ({self.scale_up_consecutive_ticks}/{self.scale_up_confirmations} observations).",
                     "cooldown_active": False
                 }
 
         # 3. Check Scale-Down Condition
-        # Condition: Capacity recommendation is lower than current count AND CPU utilization is low
-        elif recommended_servers < self.current_server_count and cpu_usage <= self.scale_down_cpu_threshold:
+        # Trigger scale-down if capacity surplus exists AND CPU is low AND SLA status is healthy
+        elif recommended_servers < self.current_server_count and cpu_usage <= self.scale_down_cpu_threshold and sla_status == "HEALTHY":
             self.scale_down_consecutive_ticks += 1
             self.scale_up_consecutive_ticks = 0  # Reset scale up counters
             
@@ -132,11 +133,14 @@ class AutoscalingController:
             self.scale_up_consecutive_ticks = 0
             self.scale_down_consecutive_ticks = 0
             self.ticks_since_last_scaling += 1  # Increment cooldown timer
+            reason_msg = "Workload is stable. Server capacity is optimal."
+            if recommended_servers < self.current_server_count and sla_status != "HEALTHY":
+                reason_msg = f"Scale down prevented: SLA is {sla_status}."
             return {
                 "current_servers": self.current_server_count,
                 "predicted_servers": float(predicted_servers),
                 "recommended_servers": self.current_server_count,
                 "action": "NO_ACTION",
-                "reason": "Workload is stable. Server capacity is optimal.",
+                "reason": reason_msg,
                 "cooldown_active": False
             }

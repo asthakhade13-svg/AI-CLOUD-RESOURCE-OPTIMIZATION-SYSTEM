@@ -12,11 +12,12 @@ from src.forecasting import forecast_next_workloads, FORECAST_METRICS
 from src.capacity import calculate_required_servers, estimate_prediction_uncertainty
 from src.controller import AutoscalingController
 from src.optimizer import optimize_capacity_cost
+from src.sla import evaluate_sla
 
 app = FastAPI(
     title="AI Cloud Resource Optimization API",
-    description="A FastAPI backend leveraging two-stage predictive autoscaling, risk-managed capacity planning, cost optimization, and a stateful anti-thrashing controller.",
-    version="7.0.0"
+    description="A FastAPI backend leveraging two-stage predictive autoscaling, risk-managed capacity planning, cost optimization, performance SLA evaluation, and an anti-thrashing controller.",
+    version="8.0.0"
 )
 
 # Enable CORS for frontend integration
@@ -119,6 +120,11 @@ class PredictionInput(BaseModel):
     # Cost Optimizer Weights
     sla_penalty_weight: float = Field(5.0, ge=0.0, description="SLA violation penalty weight multiplier")
     overprovisioning_weight: float = Field(0.5, ge=0.0, description="Overprovisioning budget wastage weight multiplier")
+    
+    # SLA Targets
+    target_response_time: float = Field(200.0, ge=0.0, description="Target SLA response time (ms)")
+    maximum_error_rate: float = Field(1.0, ge=0.0, le=100.0, description="Maximum SLA error rate (%)")
+    minimum_availability: float = Field(99.0, ge=0.0, le=100.0, description="Minimum SLA availability (%)")
 
 class PredictionOutput(BaseModel):
     recommended_servers: int = Field(..., description="The final recommended server capacity after all optimizations & safety locks.")
@@ -130,7 +136,10 @@ class PredictionOutput(BaseModel):
     estimated_daily_cost: float = Field(..., description="Daily hosting cost projection.")
     estimated_monthly_cost: float = Field(..., description="Monthly hosting cost projection.")
     estimated_savings: float = Field(..., description="Daily estimated cost savings compared to the current server count.")
-    sla_status: str = Field(..., description="SLA compliance status: SATISFIED or VIOLATED.")
+    
+    # SLA metrics
+    sla_status: str = Field(..., description="SLA compliance status: VIOLATED, AT_RISK, or HEALTHY.")
+    risk_score: float = Field(..., description="Standardized SLA breach risk score [0.0, 1.0].")
     optimization_reason: str = Field(..., description="Detailed description of the cost-performance trade-offs.")
     
     # Controller outputs
@@ -158,7 +167,7 @@ class PredictionOutput(BaseModel):
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to the AI Cloud Resource Optimization API v7.0 (Cost-Aware Optimization)",
+        "message": "Welcome to the AI Cloud Resource Optimization API v8.0 (Performance & SLA-Aware)",
         "docs_url": "/docs",
         "health_check_url": "/health",
         "model_loaded": model is not None,
@@ -198,7 +207,8 @@ def predict(payload: PredictionInput):
         "min_servers", "max_servers", "safety_margin", 
         "scale_up_cpu_threshold", "scale_down_cpu_threshold", "cooldown_periods",
         "scale_up_confirmations", "scale_down_confirmations", "max_scale_up_step", "max_scale_down_step",
-        "sla_penalty_weight", "overprovisioning_weight"
+        "sla_penalty_weight", "overprovisioning_weight",
+        "target_response_time", "maximum_error_rate", "minimum_availability"
     ]
     base_input_dict = {k: v for k, v in input_dict.items() if k not in exclude_keys}
     
@@ -262,9 +272,8 @@ def predict(payload: PredictionInput):
         uncertainty = estimate_prediction_uncertainty(model, scaled_projected_input)
         
         # 6. Cost-Aware Optimization Engine
-        # Evaluates configurations and selects optimal server target
         opt_res = optimize_capacity_cost(
-            predicted_required_servers=capacity["recommended_servers"],  # Use safe recommendation as target
+            predicted_required_servers=capacity["recommended_servers"],
             current_servers=payload.current_servers,
             server_cost_per_hour=payload.server_cost,
             min_servers=payload.min_servers,
@@ -273,8 +282,19 @@ def predict(payload: PredictionInput):
             overprovisioning_weight=payload.overprovisioning_weight
         )
         
-        # 7. Apply Stateful Anti-Thrashing Autoscaling Controller
-        # Dynamically sync controller configurations from payload settings
+        # 7. Performance & SLA Evaluation Module
+        sla_res = evaluate_sla(
+            response_time=payload.response_time,
+            error_rate=payload.error_rate,
+            cpu_usage=payload.cpu_usage,
+            memory_usage=payload.memory_usage,
+            target_response_time=payload.target_response_time,
+            maximum_error_rate=payload.maximum_error_rate,
+            minimum_availability=payload.minimum_availability
+        )
+        
+        # 8. Apply Stateful Anti-Thrashing Autoscaling Controller
+        # Dynamically sync controller configurations
         controller.min_servers = max(1, payload.min_servers)
         controller.max_servers = max(controller.min_servers, payload.max_servers)
         controller.scale_up_cpu_threshold = payload.scale_up_cpu_threshold
@@ -288,13 +308,19 @@ def predict(payload: PredictionInput):
         # Synchronize starting server count with the payload's current state
         controller.current_server_count = payload.current_servers
         
-        # Execute decision logic based on the cost-optimized target count
+        # Execute decision logic based on the cost-optimized target count & SLA performance status
         decision = controller.make_scaling_decision(
             cpu_usage=payload.cpu_usage,
             predicted_servers=capacity["predicted_servers"],
-            recommended_servers=opt_res["recommended_servers"]
+            recommended_servers=opt_res["recommended_servers"],
+            sla_status=sla_res["status"]
         )
         
+        # Override optimization reason if SLA issues were dominant
+        reasoning = opt_res["optimization_reason"]
+        if sla_res["status"] != "HEALTHY":
+            reasoning = f"SLA State: {sla_res['status']} ({sla_res['reason']}). " + reasoning
+            
         return PredictionOutput(
             recommended_servers=decision["recommended_servers"],
             current_servers=payload.current_servers,
@@ -302,9 +328,10 @@ def predict(payload: PredictionInput):
             hourly_cost=opt_res["hourly_cost"],
             estimated_daily_cost=opt_res["estimated_daily_cost"],
             estimated_monthly_cost=opt_res["estimated_monthly_cost"],
-            estimated_savings=opt_res["estimated_savings_daily"],  # Report daily savings
-            sla_status=opt_res["sla_status"],
-            optimization_reason=opt_res["optimization_reason"],
+            estimated_savings=opt_res["estimated_savings_daily"],
+            sla_status=sla_res["status"],
+            risk_score=sla_res["risk_score"],
+            optimization_reason=reasoning,
             action=decision["action"],
             scaling_action=decision["action"],
             reason=decision["reason"],
