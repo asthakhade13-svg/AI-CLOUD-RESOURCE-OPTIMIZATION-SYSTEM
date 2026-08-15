@@ -54,6 +54,12 @@ def test_predict_success(client):
         assert "predicted_cpu_15min" in data
         assert "forecasts" in data
         assert "cooldown_active" in data
+        assert "hourly_cost" in data
+        assert "estimated_daily_cost" in data
+        assert "estimated_monthly_cost" in data
+        assert "estimated_savings" in data
+        assert "sla_status" in data
+        assert "optimization_reason" in data
         assert data["current_servers"] == 3
         assert data["recommended_servers"] >= 1
         assert data["scaling_action"] in ["SCALE_UP", "SCALE_DOWN", "NO_ACTION"]
