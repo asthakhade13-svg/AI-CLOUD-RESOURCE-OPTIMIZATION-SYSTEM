@@ -60,6 +60,12 @@ def test_predict_success(client):
         assert "estimated_savings" in data
         assert "sla_status" in data
         assert "risk_score" in data
+        assert "is_anomaly" in data
+        assert "anomaly_score" in data
+        assert "severity" in data
+        assert "anomaly_severity" in data
+        assert "affected_metrics" in data
+        assert "recommendation" in data
         assert "optimization_reason" in data
         assert data["current_servers"] == 3
         assert data["recommended_servers"] >= 1

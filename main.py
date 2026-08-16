@@ -7,17 +7,19 @@ import numpy as np
 import os
 import threading
 from datetime import datetime, timedelta
+from typing import List
 from src.pipeline import BASE_FEATURES, preprocess_single_record, DatasetValidationError
 from src.forecasting import forecast_next_workloads, FORECAST_METRICS
 from src.capacity import calculate_required_servers, estimate_prediction_uncertainty
 from src.controller import AutoscalingController
 from src.optimizer import optimize_capacity_cost
 from src.sla import evaluate_sla
+from src.anomaly import detect_anomaly_record
 
 app = FastAPI(
     title="AI Cloud Resource Optimization API",
-    description="A FastAPI backend leveraging two-stage predictive autoscaling, risk-managed capacity planning, cost optimization, performance SLA evaluation, and an anti-thrashing controller.",
-    version="8.0.0"
+    description="A FastAPI backend leveraging two-stage predictive autoscaling, risk-managed capacity planning, cost optimization, performance SLA evaluation, anomaly detection, and an anti-thrashing controller.",
+    version="9.0.0"
 )
 
 # Enable CORS for frontend integration
@@ -142,6 +144,14 @@ class PredictionOutput(BaseModel):
     risk_score: float = Field(..., description="Standardized SLA breach risk score [0.0, 1.0].")
     optimization_reason: str = Field(..., description="Detailed description of the cost-performance trade-offs.")
     
+    # Anomaly metrics
+    is_anomaly: bool = Field(..., description="Flag indicating if the current workload pattern is anomalous.")
+    anomaly_score: float = Field(..., description="Normalized anomaly scoring metric [0.0, 1.0].")
+    severity: str = Field(..., description="Severity of detected anomaly (LOW/MEDIUM/HIGH/CRITICAL).")
+    anomaly_severity: str = Field(..., description="Alias for severity to maintain backwards compatibility.")
+    affected_metrics: List[str] = Field(..., description="List of metrics showing significant deviations.")
+    recommendation: str = Field(..., description="Scaling action advice based on anomaly detection output.")
+    
     # Controller outputs
     action: str = Field(..., description="The controller action: SCALE_UP, SCALE_DOWN, or NO_ACTION.")
     scaling_action: str = Field(..., description="Alias for action to maintain backwards compatibility.")
@@ -167,7 +177,7 @@ class PredictionOutput(BaseModel):
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to the AI Cloud Resource Optimization API v8.0 (Performance & SLA-Aware)",
+        "message": "Welcome to the AI Cloud Resource Optimization API v9.0 (AI Anomaly Detection)",
         "docs_url": "/docs",
         "health_check_url": "/health",
         "model_loaded": model is not None,
@@ -293,7 +303,21 @@ def predict(payload: PredictionInput):
             minimum_availability=payload.minimum_availability
         )
         
-        # 8. Apply Stateful Anti-Thrashing Autoscaling Controller
+        # 8. Run AI Anomaly Detection (Isolation Forest)
+        # We also need sin_hour, cos_hour, etc., inside new_row_df for anomaly features
+        # Let's extract hour and day_of_week for the new row to populate time features
+        latest_ts = pd.to_datetime(new_row_df.iloc[0]["timestamp"])
+        new_row_with_time = new_row_df.copy()
+        new_row_with_time["hour"] = latest_ts.hour
+        new_row_with_time["day_of_week"] = latest_ts.dayofweek
+        new_row_with_time["sin_hour"] = np.sin(2 * np.pi * latest_ts.hour / 24.0)
+        new_row_with_time["cos_hour"] = np.cos(2 * np.pi * latest_ts.hour / 24.0)
+        new_row_with_time["sin_day_of_week"] = np.sin(2 * np.pi * latest_ts.dayofweek / 7.0)
+        new_row_with_time["cos_day_of_week"] = np.cos(2 * np.pi * latest_ts.dayofweek / 7.0)
+        
+        anomaly_res = detect_anomaly_record(new_row_with_time, history_buffer)
+        
+        # 9. Apply Stateful Anti-Thrashing Autoscaling Controller
         # Dynamically sync controller configurations
         controller.min_servers = max(1, payload.min_servers)
         controller.max_servers = max(controller.min_servers, payload.max_servers)
@@ -308,17 +332,20 @@ def predict(payload: PredictionInput):
         # Synchronize starting server count with the payload's current state
         controller.current_server_count = payload.current_servers
         
-        # Execute decision logic based on the cost-optimized target count & SLA performance status
+        # Execute decision logic based on the cost-optimized target count, SLA state, and anomaly severity
         decision = controller.make_scaling_decision(
             cpu_usage=payload.cpu_usage,
             predicted_servers=capacity["predicted_servers"],
             recommended_servers=opt_res["recommended_servers"],
-            sla_status=sla_res["status"]
+            sla_status=sla_res["status"],
+            anomaly_severity=anomaly_res["severity"]
         )
         
-        # Override optimization reason if SLA issues were dominant
+        # Override optimization reason if SLA issues or anomalies were dominant
         reasoning = opt_res["optimization_reason"]
-        if sla_res["status"] != "HEALTHY":
+        if anomaly_res["is_anomaly"]:
+            reasoning = f"Anomaly Alert: {anomaly_res['severity']} ({anomaly_res['reason']}). " + reasoning
+        elif sla_res["status"] != "HEALTHY":
             reasoning = f"SLA State: {sla_res['status']} ({sla_res['reason']}). " + reasoning
             
         return PredictionOutput(
@@ -332,6 +359,12 @@ def predict(payload: PredictionInput):
             sla_status=sla_res["status"],
             risk_score=sla_res["risk_score"],
             optimization_reason=reasoning,
+            is_anomaly=anomaly_res["is_anomaly"],
+            anomaly_score=anomaly_res["anomaly_score"],
+            severity=anomaly_res["severity"],
+            anomaly_severity=anomaly_res["severity"],
+            affected_metrics=anomaly_res["affected_metrics"],
+            recommendation=anomaly_res["recommendation"],
             action=decision["action"],
             scaling_action=decision["action"],
             reason=decision["reason"],
