@@ -8,6 +8,7 @@ import os
 import threading
 from datetime import datetime, timedelta
 from typing import List
+import shap
 from src.pipeline import BASE_FEATURES, preprocess_single_record, DatasetValidationError
 from src.forecasting import forecast_next_workloads, FORECAST_METRICS
 from src.capacity import calculate_required_servers, estimate_prediction_uncertainty
@@ -15,11 +16,12 @@ from src.controller import AutoscalingController
 from src.optimizer import optimize_capacity_cost
 from src.sla import evaluate_sla
 from src.anomaly import detect_anomaly_record
+from src.explainability import explain_prediction_shap
 
 app = FastAPI(
     title="AI Cloud Resource Optimization API",
-    description="A FastAPI backend leveraging two-stage predictive autoscaling, risk-managed capacity planning, cost optimization, performance SLA evaluation, anomaly detection, and an anti-thrashing controller.",
-    version="9.0.0"
+    description="A FastAPI backend leveraging two-stage predictive autoscaling, risk-managed capacity planning, cost optimization, performance SLA evaluation, anomaly detection, and SHAP explainability.",
+    version="10.0.0"
 )
 
 # Enable CORS for frontend integration
@@ -40,6 +42,8 @@ CLEANED_DATA_PATH = "data/cleaned_workload.csv"
 model = None
 scaler = None
 controller = None
+shap_explainer = None
+features_list = None
 
 # Thread-safe sliding window buffer to cache the historical workload state
 history_buffer = None
@@ -47,7 +51,7 @@ buffer_lock = threading.Lock()
 
 @app.on_event("startup")
 def load_assets_and_seed_buffer():
-    global model, scaler, history_buffer, controller
+    global model, scaler, history_buffer, controller, shap_explainer, features_list
     
     # 1. Load Capacity Predictor Model (Stage 2)
     if os.path.exists(MODEL_PATH):
@@ -88,6 +92,19 @@ def load_assets_and_seed_buffer():
     # 4. Initialize Stateful Autoscaling Controller
     controller = AutoscalingController(current_servers=5)
     print("Stateful Autoscaling Controller initialized.")
+    
+    # 5. Initialize SHAP TreeExplainer
+    if model is not None:
+        try:
+            shap_explainer = shap.TreeExplainer(model)
+            print("SHAP TreeExplainer successfully initialized.")
+        except Exception as e:
+            print(f"Error initializing SHAP TreeExplainer: {e}")
+            
+    # 6. Load feature names
+    features_list_path = "artifacts/features_list.pkl"
+    if os.path.exists(features_list_path):
+        features_list = joblib.load(features_list_path)
 
 class PredictionInput(BaseModel):
     # Telemetry
@@ -152,6 +169,10 @@ class PredictionOutput(BaseModel):
     affected_metrics: List[str] = Field(..., description="List of metrics showing significant deviations.")
     recommendation: str = Field(..., description="Scaling action advice based on anomaly detection output.")
     
+    # SHAP Explainability outputs
+    shap_explanation: str = Field(..., description="Human-readable SHAP explanation outlining feature contributions.")
+    shap_contributions: dict = Field(..., description="Shapley feature value contributions grouped by core categories.")
+    
     # Controller outputs
     action: str = Field(..., description="The controller action: SCALE_UP, SCALE_DOWN, or NO_ACTION.")
     scaling_action: str = Field(..., description="Alias for action to maintain backwards compatibility.")
@@ -177,7 +198,7 @@ class PredictionOutput(BaseModel):
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to the AI Cloud Resource Optimization API v9.0 (AI Anomaly Detection)",
+        "message": "Welcome to the AI Cloud Resource Optimization API v10.0 (Explainable AI - SHAP)",
         "docs_url": "/docs",
         "health_check_url": "/health",
         "model_loaded": model is not None,
@@ -201,10 +222,10 @@ def health_check():
 
 @app.post("/predict", response_model=PredictionOutput)
 def predict(payload: PredictionInput):
-    global model, scaler, history_buffer, controller
+    global model, scaler, history_buffer, controller, shap_explainer, features_list
     
     # 1. Asset check
-    if model is None or scaler is None or controller is None:
+    if model is None or scaler is None or controller is None or shap_explainer is None or features_list is None:
         raise HTTPException(
             status_code=503,
             detail="Autoscaling system dependencies not fully loaded."
@@ -304,8 +325,6 @@ def predict(payload: PredictionInput):
         )
         
         # 8. Run AI Anomaly Detection (Isolation Forest)
-        # We also need sin_hour, cos_hour, etc., inside new_row_df for anomaly features
-        # Let's extract hour and day_of_week for the new row to populate time features
         latest_ts = pd.to_datetime(new_row_df.iloc[0]["timestamp"])
         new_row_with_time = new_row_df.copy()
         new_row_with_time["hour"] = latest_ts.hour
@@ -318,7 +337,6 @@ def predict(payload: PredictionInput):
         anomaly_res = detect_anomaly_record(new_row_with_time, history_buffer)
         
         # 9. Apply Stateful Anti-Thrashing Autoscaling Controller
-        # Dynamically sync controller configurations
         controller.min_servers = max(1, payload.min_servers)
         controller.max_servers = max(controller.min_servers, payload.max_servers)
         controller.scale_up_cpu_threshold = payload.scale_up_cpu_threshold
@@ -329,16 +347,22 @@ def predict(payload: PredictionInput):
         controller.max_scale_up_step = payload.max_scale_up_step
         controller.max_scale_down_step = payload.max_scale_down_step
         
-        # Synchronize starting server count with the payload's current state
         controller.current_server_count = payload.current_servers
         
-        # Execute decision logic based on the cost-optimized target count, SLA state, and anomaly severity
         decision = controller.make_scaling_decision(
             cpu_usage=payload.cpu_usage,
             predicted_servers=capacity["predicted_servers"],
             recommended_servers=opt_res["recommended_servers"],
             sla_status=sla_res["status"],
             anomaly_severity=anomaly_res["severity"]
+        )
+        
+        # 10. Run SHAP Explainability Engine
+        xai_res = explain_prediction_shap(
+            explainer=shap_explainer,
+            X_scaled_record=scaled_projected_input,
+            feature_names=features_list,
+            recommended_servers=decision["recommended_servers"]
         )
         
         # Override optimization reason if SLA issues or anomalies were dominant
@@ -365,6 +389,8 @@ def predict(payload: PredictionInput):
             anomaly_severity=anomaly_res["severity"],
             affected_metrics=anomaly_res["affected_metrics"],
             recommendation=anomaly_res["recommendation"],
+            shap_explanation=xai_res["shap_explanation"],
+            shap_contributions=xai_res["category_contributions"],
             action=decision["action"],
             scaling_action=decision["action"],
             reason=decision["reason"],

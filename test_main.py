@@ -66,6 +66,8 @@ def test_predict_success(client):
         assert "anomaly_severity" in data
         assert "affected_metrics" in data
         assert "recommendation" in data
+        assert "shap_explanation" in data
+        assert "shap_contributions" in data
         assert "optimization_reason" in data
         assert data["current_servers"] == 3
         assert data["recommended_servers"] >= 1
