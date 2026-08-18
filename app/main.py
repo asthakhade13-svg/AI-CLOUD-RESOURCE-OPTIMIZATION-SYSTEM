@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 import pandas as pd
 import numpy as np
 import os
@@ -102,6 +102,16 @@ def startup_event():
         else:
             logger.warning(f"Cleaned dataset CSV '{settings.CLEANED_DATA_PATH}' not found. Seeding empty history.")
             history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
+
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    """Serves the interactive cloud orchestrator web console dashboard."""
+    paths_to_check = ["index.html", "../index.html", "app/index.html"]
+    for path in paths_to_check:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Cloud Resource Optimization Console</h1><p>Dashboard HTML asset not found.</p>")
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 def health_check():

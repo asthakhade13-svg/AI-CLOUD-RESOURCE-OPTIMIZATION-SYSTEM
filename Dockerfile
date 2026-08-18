@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ /app/src/
 COPY app/ /app/app/
 COPY artifacts/ /app/artifacts/
+COPY index.html /app/
 COPY main.py /app/
 
 # Expose port 8000 for FastAPI

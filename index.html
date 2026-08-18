@@ -71,7 +71,9 @@
         const { useState, useEffect, useRef } = React;
 
         // API Endpoint configurations
-        const API_URL = "http://127.0.0.1:8000";
+        const API_URL = window.location.origin && window.location.origin !== "null" && !window.location.origin.startsWith("file://") 
+            ? window.location.origin 
+            : "http://127.0.0.1:8000";
 
         function App() {
             // Loading and connection state variables

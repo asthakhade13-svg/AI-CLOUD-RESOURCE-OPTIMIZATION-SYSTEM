@@ -109,3 +109,9 @@ def test_optimize_endpoint_success(client):
     assert "recommended_servers" in data
     assert "hourly_cost" in data
     assert "estimated_savings" in data
+
+def test_root_dashboard_endpoint(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Cloud Resource Optimization Console" in response.text
