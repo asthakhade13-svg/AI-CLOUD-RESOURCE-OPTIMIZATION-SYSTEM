@@ -1,15 +1,75 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: resource_optimizer_db
+    environment:
+      - POSTGRES_DB=resource_optimization
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d resource_optimization"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  ml_service:
+    build:
+      context: .
+      dockerfile: ml_service/Dockerfile
+    container_name: resource_optimizer_ml
+    ports:
+      - "8050:8050"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8050/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: app/Dockerfile
     container_name: resource_optimizer_app
     ports:
       - "8000:8000"
     environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=resource_optimization
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - ML_SERVICE_URL=http://ml_service:8050
       - LOG_LEVEL=INFO
+    depends_on:
+      db:
+        condition: service_healthy
+      ml_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: resource_optimizer_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - app
     restart: always
 
   prometheus:
@@ -40,3 +100,6 @@ services:
     depends_on:
       - prometheus
     restart: always
+
+volumes:
+  postgres_data:

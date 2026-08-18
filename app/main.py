@@ -6,46 +6,41 @@ import numpy as np
 import os
 import time
 import threading
-from datetime import datetime, timedelta
+import psycopg2
+import requests
+from datetime import datetime
 from typing import Dict, Any
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from app.config import settings
 from app.utils.logging import logger
-from app.models.manager import model_manager
 from app.schemas import (
     TelemetryPayload, PredictRequest, PredictResponse,
     AutoscaleRequest, AutoscaleOutput,
     OptimizeRequest, OptimizeOutput,
     AnomalyOutput, ForecastOutput
 )
-from app.services.forecasting import forecast_workloads
-from app.services.capacity import evaluate_capacity, estimate_uncertainty
 from app.services.optimizer import optimize_cost
 from app.services.controller import get_autoscaler
-from app.services.anomaly import detect_anomaly
-from app.services.explainability import explain_prediction
 from app.utils.prometheus import update_prometheus_metrics
-
-from src.pipeline import BASE_FEATURES, preprocess_single_record, DatasetValidationError
 from src.sla import evaluate_sla
 
 app = FastAPI(
-    title=settings.APP_TITLE,
-    description="Production-grade REST API backend for Cloud Resource Optimization with forecasting, predictive capacity sizing, cost optimizations, SLA checks, anomaly overrides, and SHAP explainability.",
-    version=settings.APP_VERSION
+    title="AI Cloud Resource Optimization API Gateway",
+    description="Orchestrator backend connecting Nginx frontend, ML Model service, and PostgreSQL database.",
+    version="11.0.0"
 )
 
 # CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global metrics register
+# Gateway Metrics Registry
 API_METRICS: Dict[str, Any] = {
     "total_predict_requests": 0,
     "total_forecast_requests": 0,
@@ -56,52 +51,41 @@ API_METRICS: Dict[str, Any] = {
     "errors_logged": 0
 }
 
-# In-memory sliding window history buffer for time-series forecasting (lags generation)
-history_buffer = None
-buffer_lock = threading.Lock()
+# Env configs
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "resource_optimization")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
+ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://localhost:8050")
 
-# Custom error handler for validation error
-@app.exception_handler(DatasetValidationError)
-async def validation_exception_handler(request: Request, exc: DatasetValidationError):
-    API_METRICS["errors_logged"] += 1
-    logger.error(f"Validation error occurred: {exc.message}")
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": f"Dataset Validation Error: {exc.message}"}
-    )
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    API_METRICS["errors_logged"] += 1
-    logger.error(f"Global server error: {str(exc)}", exc_info=True)
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": f"Internal Server Error: {str(exc)}"}
-    )
+def get_db_connection():
+    """Tries connecting to PostgreSQL with retry counts to handle boot sequence delays."""
+    for i in range(5):
+        try:
+            conn = psycopg2.connect(
+                host=DB_HOST,
+                port=DB_PORT,
+                database=DB_NAME,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                connect_timeout=3
+            )
+            return conn
+        except Exception:
+            time.sleep(1)
+    return None
 
 @app.on_event("startup")
 def startup_event():
-    global history_buffer
-    logger.info("Starting up FastAPI application...")
-    
-    # 1. Load ML assets once at startup
-    model_manager.load_all_assets()
-    
-    # 2. Seed history buffer from cleaned workload CSV
-    with buffer_lock:
-        if os.path.exists(settings.CLEANED_DATA_PATH):
-            try:
-                df_clean = pd.read_csv(settings.CLEANED_DATA_PATH)
-                raw_columns = ["timestamp"] + BASE_FEATURES
-                available_cols = [c for c in raw_columns if c in df_clean.columns]
-                history_buffer = df_clean[available_cols].tail(30).reset_index(drop=True)
-                logger.info(f"Seeded history buffer with {len(history_buffer)} historical workloads.")
-            except Exception as e:
-                logger.error(f"Error seeding history buffer: {e}")
-                history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
-        else:
-            logger.warning(f"Cleaned dataset CSV '{settings.CLEANED_DATA_PATH}' not found. Seeding empty history.")
-            history_buffer = pd.DataFrame(columns=["timestamp"] + BASE_FEATURES)
+    logger.info("Initializing API Gateway service...")
+    # Verify DB connectivity on startup
+    conn = get_db_connection()
+    if conn:
+        logger.info("Database connectivity successfully verified.")
+        conn.close()
+    else:
+        logger.warning("Database unreachable on startup. Continuing in degraded mode.")
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
@@ -115,18 +99,12 @@ def read_root():
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 def health_check():
-    """Returns application health and model loading metadata."""
-    if not model_manager.assets_loaded:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Machine learning models are not loaded. Run pipeline/training first."
-        )
+    """Returns application health gateway status."""
     return {
         "status": "healthy",
         "app_title": settings.APP_TITLE,
         "app_version": settings.APP_VERSION,
-        "assets_loaded": model_manager.assets_loaded,
-        "history_buffer_size": len(history_buffer) if history_buffer is not None else 0
+        "db_connected": get_db_connection() is not None
     }
 
 @app.get("/metrics")
@@ -137,22 +115,16 @@ def get_metrics():
 @app.post("/predict", response_model=PredictResponse)
 def predict_capacity(payload: PredictRequest):
     """
-    Executes full predictive scaling decision. Loads Stage 1 models to forecast workloads,
-    applies Stage 2 Random Forest capacity planner, cost-minimization optimization,
-    SLA checks, anomaly alerts, and SHAP explainability.
+    Gateway predict route. Proxies inputs to ML Model service for raw prediction slices,
+    then executes cost optimization, SLA checks, anomaly controller triggers,
+    and logs telemetry to PostgreSQL.
     """
-    global history_buffer
+    global API_METRICS
     start_time = time.perf_counter()
     API_METRICS["total_predict_requests"] += 1
     
-    if not model_manager.assets_loaded:
-        raise HTTPException(status_code=503, detail="ML Models are not loaded.")
-        
-    # Map input request to dictionary format
-    input_dict = payload.dict()
-    
-    # Construct complete telemetry dictionary for features list
-    telemetry = {
+    # 1. Forward to ML service for raw forecast, capacity, anomalies, and SHAP
+    raw_payload = {
         "cpu_usage": payload.cpu_usage,
         "memory_usage": payload.memory_usage,
         "network_in": payload.network_in,
@@ -165,59 +137,25 @@ def predict_capacity(payload: PredictRequest):
         "response_time": payload.response_time,
         "error_rate": payload.error_rate,
         "current_servers": payload.current_servers,
-        "server_cost": payload.server_cost
+        "server_cost": payload.server_cost,
+        "safety_margin": payload.safety_margin,
+        "min_servers": payload.min_servers,
+        "max_servers": payload.max_servers
     }
     
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    telemetry["timestamp"] = now_str
-    
     try:
-        new_row_df = pd.DataFrame([telemetry])
+        ml_res = requests.post(f"{ML_SERVICE_URL}/predict_raw", json=raw_payload, timeout=5)
+        if ml_res.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"ML Service returned error: {ml_res.text}")
+        ml_data = ml_res.json()
+    except Exception as e:
+        logger.error(f"Failed to communicate with ML Model Service: {e}")
+        raise HTTPException(status_code=502, detail=f"ML Model service unreachable: {str(e)}")
         
-        # 1. Update history and calculate workloads forecast
-        with buffer_lock:
-            combined_df = pd.concat([history_buffer, new_row_df], ignore_index=True)
-            context_df = combined_df.tail(30).reset_index(drop=True)
-            
-            # Forecast next workloads (outputs forecasts dict)
-            forecasts = forecast_workloads(context_df)
-            
-            # Update cache
-            raw_cols = ["timestamp"] + BASE_FEATURES
-            history_buffer = context_df[raw_cols].tail(30).reset_index(drop=True)
-            
-        # 2. Predictive Server capacity Sizing (15-min projection)
-        proj_15 = telemetry.copy()
-        fc_15 = forecasts["15min"]
-        proj_15["cpu_usage"] = fc_15["cpu_usage"]
-        proj_15["memory_usage"] = fc_15["memory_usage"]
-        proj_15["network_traffic"] = fc_15["network_traffic"]
-        proj_15["active_users"] = int(np.round(fc_15["active_users"]))
-        proj_15["request_rate"] = fc_15["request_rate"]
-        proj_15["response_time"] = fc_15["response_time"]
-        
-        future_dt = datetime.strptime(now_str, "%Y-%m-%d %H:%M:%S") + timedelta(minutes=15)
-        proj_15["timestamp"] = future_dt.strftime("%Y-%m-%d %H:%M:%S")
-        
-        proj_df = pd.DataFrame([proj_15])
-        projected_context = pd.concat([context_df, proj_df], ignore_index=True).tail(31).reset_index(drop=True)
-        
-        scaled_projected_input = preprocess_single_record(projected_context, model_manager.capacity_scaler)
-        raw_pred = model_manager.capacity_model.predict(scaled_projected_input)[0]
-        
-        # 3. Apply safe capacity boundaries and uncertainty estimations
-        capacity = evaluate_capacity(
-            prediction=raw_pred,
-            current_servers=payload.current_servers,
-            min_servers=payload.min_servers,
-            max_servers=payload.max_servers,
-            safety_margin=payload.safety_margin
-        )
-        uncertainty = estimate_uncertainty(scaled_projected_input)
-        
-        # 4. Cost Optimization tradeoffs
+    try:
+        # 2. Local Cost Optimization trade-offs
         opt_res = optimize_cost(
-            predicted_required_servers=capacity["recommended_servers"],
+            predicted_required_servers=ml_data["recommended_servers"],
             current_servers=payload.current_servers,
             server_cost_per_hour=payload.server_cost,
             min_servers=payload.min_servers,
@@ -226,7 +164,7 @@ def predict_capacity(payload: PredictRequest):
             overprovisioning_weight=payload.overprovisioning_weight
         )
         
-        # 5. SLA evaluation checks
+        # 3. Local SLA evaluation checks
         sla_res = evaluate_sla(
             response_time=payload.response_time,
             error_rate=payload.error_rate,
@@ -237,18 +175,7 @@ def predict_capacity(payload: PredictRequest):
             minimum_availability=payload.minimum_availability
         )
         
-        # 6. Anomaly Checks
-        new_row_with_time = new_row_df.copy()
-        new_row_with_time["hour"] = latest_ts = pd.to_datetime(now_str).hour
-        new_row_with_time["day_of_week"] = pd.to_datetime(now_str).dayofweek
-        new_row_with_time["sin_hour"] = np.sin(2 * np.pi * latest_ts / 24.0)
-        new_row_with_time["cos_hour"] = np.cos(2 * np.pi * latest_ts / 24.0)
-        new_row_with_time["sin_day_of_week"] = np.sin(2 * np.pi * new_row_with_time["day_of_week"] / 7.0)
-        new_row_with_time["cos_day_of_week"] = np.cos(2 * np.pi * new_row_with_time["day_of_week"] / 7.0)
-        
-        anomaly_res = detect_anomaly(new_row_with_time, history_buffer)
-        
-        # 7. Autoscaler Decisions
+        # 4. Local Stateful Anti-Thrashing Autoscaler decisions
         controller = get_autoscaler(current_servers=payload.current_servers)
         controller.min_servers = payload.min_servers
         controller.max_servers = payload.max_servers
@@ -263,26 +190,65 @@ def predict_capacity(payload: PredictRequest):
         
         decision = controller.make_scaling_decision(
             cpu_usage=payload.cpu_usage,
-            predicted_servers=capacity["predicted_servers"],
+            predicted_servers=ml_data["predicted_servers"],
             recommended_servers=opt_res["recommended_servers"],
             sla_status=sla_res["status"],
-            anomaly_severity=anomaly_res["severity"]
+            anomaly_severity=ml_data["severity"]
         )
         
-        # 8. SHAP Local Explanations
-        xai_res = explain_prediction(scaled_projected_input, decision["recommended_servers"])
-        
-        # 9. Update Prometheus metrics
+        # 5. Write to PostgreSQL database
+        conn = get_db_connection()
+        if conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO telemetry_logs 
+                    (cpu_usage, memory_usage, network_traffic, active_users, current_servers, recommended_servers, action, sla_status, anomaly_severity, optimization_reason)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        payload.cpu_usage,
+                        payload.memory_usage,
+                        payload.network_traffic if payload.network_traffic is not None else (payload.network_in + payload.network_out),
+                        payload.active_users,
+                        payload.current_servers,
+                        decision["recommended_servers"],
+                        decision["action"],
+                        sla_res["status"],
+                        ml_data["severity"],
+                        opt_res["optimization_reason"]
+                    )
+                )
+                conn.commit()
+                cursor.close()
+                conn.close()
+            except Exception as dbe:
+                logger.error(f"Error logging telemetry to PostgreSQL: {dbe}")
+                if conn:
+                    conn.close()
+                    
+        # 6. Update Prometheus Metrics
         latency = time.perf_counter() - start_time
-        prediction_metrics = {
-            "predicted_servers": capacity["predicted_servers"],
+        telemetry_dict = {
+            "cpu_usage": payload.cpu_usage,
+            "memory_usage": payload.memory_usage,
+            "network_traffic": payload.network_traffic if payload.network_traffic is not None else (payload.network_in + payload.network_out),
+            "request_rate": payload.request_rate,
+            "response_time": payload.response_time,
+            "error_rate": payload.error_rate,
+            "active_users": payload.active_users,
+            "current_servers": payload.current_servers
+        }
+        pred_dict = {
+            "predicted_servers": ml_data["predicted_servers"],
             "recommended_servers": decision["recommended_servers"],
             "action": decision["action"]
         }
-        update_prometheus_metrics(telemetry, prediction_metrics, latency)
+        update_prometheus_metrics(telemetry_dict, pred_dict, latency)
         
         return PredictResponse(
-            predicted_servers=int(np.round(capacity["predicted_servers"])),
+            predicted_servers=int(np.round(ml_data["predicted_servers"])),
             recommended_servers=decision["recommended_servers"],
             action=decision["action"],
             current_servers=payload.current_servers,
@@ -292,18 +258,18 @@ def predict_capacity(payload: PredictRequest):
             cooldown_active=decision["cooldown_active"],
             sla_status=sla_res["status"],
             risk_score=sla_res["risk_score"],
-            is_anomaly=anomaly_res["is_anomaly"],
-            anomaly_score=anomaly_res["anomaly_score"],
-            severity=anomaly_res["severity"],
-            affected_metrics=anomaly_res["affected_metrics"],
-            recommendation=anomaly_res["recommendation"],
-            shap_explanation=xai_res["shap_explanation"],
-            shap_contributions=xai_res["category_contributions"],
+            is_anomaly=ml_data["is_anomaly"],
+            anomaly_score=ml_data["anomaly_score"],
+            severity=ml_data["severity"],
+            affected_metrics=ml_data["affected_metrics"],
+            recommendation=ml_data["recommendation"],
+            shap_explanation=ml_data["shap_explanation"],
+            shap_contributions=ml_data["shap_contributions"],
             hourly_cost=opt_res["hourly_cost"],
             estimated_daily_cost=opt_res["estimated_daily_cost"],
             estimated_monthly_cost=opt_res["estimated_monthly_cost"],
             estimated_savings=opt_res["estimated_savings_daily"],
-            forecasts=forecasts
+            forecasts=ml_data["forecasts"]
         )
     except Exception as e:
         logger.error(f"Error executing prediction endpoint: {str(e)}", exc_info=True)
@@ -311,25 +277,22 @@ def predict_capacity(payload: PredictRequest):
 
 @app.post("/forecast", response_model=ForecastOutput)
 def predict_forecasts(payload: TelemetryPayload):
-    """Generates workload forecasts for the next 5, 10, and 15 minutes."""
+    """Generates workload forecasts (delegates to ML service)."""
     API_METRICS["total_forecast_requests"] += 1
     
     input_dict = payload.dict()
     if input_dict.get("network_traffic") is None:
         input_dict["network_traffic"] = input_dict["network_in"] + input_dict["network_out"]
         
-    input_dict["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
     try:
-        new_row = pd.DataFrame([input_dict])
-        with buffer_lock:
-            combined = pd.concat([history_buffer, new_row], ignore_index=True)
-            context = combined.tail(30).reset_index(drop=True)
-            forecasts = forecast_workloads(context)
-            
-        return ForecastOutput(forecasts=forecasts)
+        # Wrap PredictRequest mapping
+        ml_payload = {**input_dict, "current_servers": payload.current_servers}
+        res = requests.post(f"{ML_SERVICE_URL}/predict_raw", json=ml_payload, timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=502, detail="ML Service error.")
+        return ForecastOutput(forecasts=res.json()["forecasts"])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Forecasting calculation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Forecasting proxy failed: {str(e)}")
 
 @app.post("/autoscale", response_model=AutoscaleOutput)
 def evaluate_autoscaler(payload: AutoscaleRequest):
@@ -372,34 +335,26 @@ def evaluate_autoscaler(payload: AutoscaleRequest):
 
 @app.post("/anomaly", response_model=AnomalyOutput)
 def evaluate_anomaly(payload: TelemetryPayload):
-    """Evaluates telemetry workload state for active anomalies."""
+    """Evaluates telemetry workload state for active anomalies (proxies to ML Service)."""
     API_METRICS["total_anomaly_requests"] += 1
     
     input_dict = payload.dict()
     if input_dict.get("network_traffic") is None:
         input_dict["network_traffic"] = input_dict["network_in"] + input_dict["network_out"]
         
-    now = datetime.now()
-    input_dict["timestamp"] = now.strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Add time features
-    new_row = pd.DataFrame([input_dict])
-    new_row["hour"] = now.hour
-    new_row["day_of_week"] = now.weekday()
-    new_row["sin_hour"] = np.sin(2 * np.pi * now.hour / 24.0)
-    new_row["cos_hour"] = np.cos(2 * np.pi * now.hour / 24.0)
-    new_row["sin_day_of_week"] = np.sin(2 * np.pi * now.weekday() / 7.0)
-    new_row["cos_day_of_week"] = np.cos(2 * np.pi * now.weekday() / 7.0)
-    
     try:
-        res = detect_anomaly(new_row, history_buffer)
+        ml_payload = {**input_dict, "current_servers": payload.current_servers}
+        res = requests.post(f"{ML_SERVICE_URL}/predict_raw", json=ml_payload, timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=502, detail="ML Service anomaly check failed.")
+        data = res.json()
         return AnomalyOutput(
-            is_anomaly=res["is_anomaly"],
-            anomaly_score=res["anomaly_score"],
-            severity=res["severity"],
-            affected_metrics=res["affected_metrics"],
-            recommendation=res["recommendation"],
-            reason=res["reason"]
+            is_anomaly=data["is_anomaly"],
+            anomaly_score=data["anomaly_score"],
+            severity=data["severity"],
+            affected_metrics=data["affected_metrics"],
+            recommendation=data["recommendation"],
+            reason=data["recommendation"]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

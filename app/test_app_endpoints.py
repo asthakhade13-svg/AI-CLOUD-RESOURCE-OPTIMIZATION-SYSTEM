@@ -1,26 +1,48 @@
 import pytest
 import os
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
-from app.main import app, model_manager
+from app.main import app
 from app.config import settings
+
+@pytest.fixture(scope="module", autouse=True)
+def mock_requests_post():
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "predicted_servers": 6.0,
+        "recommended_servers": 6,
+        "uncertainty_std": 0.5,
+        "is_anomaly": False,
+        "anomaly_score": 0.08,
+        "severity": "LOW",
+        "affected_metrics": [],
+        "recommendation": "System normal.",
+        "shap_explanation": "Predicted workload is stable.",
+        "shap_contributions": {
+            "CPU utilization": 0.02,
+            "Memory utilization": 0.01,
+            "Active users": 0.05
+        },
+        "forecasts": {
+            "5min": {"cpu_usage": 45.0, "memory_usage": 50.0, "network_traffic": 120.0, "active_users": 180.0, "request_rate": 200.0, "response_time": 100.0, "latency": 120.0, "error_rate": 0.0},
+            "10min": {"cpu_usage": 45.0, "memory_usage": 50.0, "network_traffic": 120.0, "active_users": 180.0, "request_rate": 200.0, "response_time": 100.0, "latency": 120.0, "error_rate": 0.0},
+            "15min": {"cpu_usage": 45.0, "memory_usage": 50.0, "network_traffic": 120.0, "active_users": 180.0, "request_rate": 200.0, "response_time": 100.0, "latency": 120.0, "error_rate": 0.0}
+        }
+    }
+    with patch("requests.post", return_value=mock_response) as mock:
+        yield mock
 
 @pytest.fixture(scope="module")
 def client():
-    # Trigger model manager load assets
-    if not model_manager.assets_loaded:
-        model_manager.load_all_assets()
     with TestClient(app) as c:
         yield c
 
 def test_health_endpoint(client):
     response = client.get("/health")
-    if model_manager.assets_loaded:
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "healthy"
-        assert data["assets_loaded"] is True
-    else:
-        assert response.status_code == 503
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"
 
 def test_metrics_endpoint(client):
     response = client.get("/metrics")
@@ -37,16 +59,13 @@ def test_predict_endpoint_success(client):
         "current_servers": 5
     }
     response = client.post("/predict", json=payload)
-    if model_manager.assets_loaded:
-        assert response.status_code == 200
-        data = response.json()
-        assert "predicted_servers" in data
-        assert "recommended_servers" in data
-        assert "action" in data
-        assert data["current_servers"] == 5
-        assert data["action"] in ["SCALE_UP", "SCALE_DOWN", "NO_ACTION"]
-    else:
-        assert response.status_code == 503
+    assert response.status_code == 200
+    data = response.json()
+    assert "predicted_servers" in data
+    assert "recommended_servers" in data
+    assert "action" in data
+    assert data["current_servers"] == 5
+    assert data["action"] in ["SCALE_UP", "SCALE_DOWN", "NO_ACTION"]
 
 def test_forecast_endpoint_success(client):
     payload = {
@@ -57,13 +76,10 @@ def test_forecast_endpoint_success(client):
         "current_servers": 3
     }
     response = client.post("/forecast", json=payload)
-    if model_manager.assets_loaded:
-        assert response.status_code == 200
-        data = response.json()
-        assert "forecasts" in data
-        assert "15min" in data["forecasts"]
-    else:
-        assert response.status_code == 500
+    assert response.status_code == 200
+    data = response.json()
+    assert "forecasts" in data
+    assert "15min" in data["forecasts"]
 
 def test_autoscale_endpoint_success(client):
     payload = {
@@ -88,14 +104,11 @@ def test_anomaly_endpoint_success(client):
         "current_servers": 5
     }
     response = client.post("/anomaly", json=payload)
-    if model_manager.assets_loaded:
-        assert response.status_code == 200
-        data = response.json()
-        assert "is_anomaly" in data
-        assert "severity" in data
-        assert "affected_metrics" in data
-    else:
-        assert response.status_code == 500
+    assert response.status_code == 200
+    data = response.json()
+    assert "is_anomaly" in data
+    assert "severity" in data
+    assert "affected_metrics" in data
 
 def test_optimize_endpoint_success(client):
     payload = {
