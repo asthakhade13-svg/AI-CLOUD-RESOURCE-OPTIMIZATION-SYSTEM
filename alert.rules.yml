@@ -1,0 +1,47 @@
+groups:
+  - name: cloud_resource_alerts
+    rules:
+      - alert: HighCPUAlert
+        expr: cloud_resource_cpu_usage_ratio > 85
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU utilization detected on instances"
+          description: "CPU usage has exceeded 85% for more than 1 minute. Current value: {{ $value }}%"
+
+      - alert: HighMemoryAlert
+        expr: cloud_resource_memory_usage_ratio > 90
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Memory utilization detected on instances"
+          description: "Memory usage has exceeded 90% for more than 1 minute. Current value: {{ $value }}%"
+
+      - alert: SLAViolationAlert
+        expr: cloud_resource_response_time_ms > 200
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Application response latency SLA violated"
+          description: "Response time has exceeded the SLA limit of 200ms for more than 1 minute. Current value: {{ $value }}ms"
+
+      - alert: AbnormalTrafficAlert
+        expr: cloud_resource_network_traffic_mbps > 800
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Abnormal network traffic spike detected"
+          description: "Network traffic has exceeded 800 Mbps. Current value: {{ $value }} Mbps"
+
+      - alert: APIFailureAlert
+        expr: up{job="fastapi-app"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "FastAPI server unreachable"
+          description: "FastAPI instance under job 'fastapi-app' has been down for more than 30 seconds."

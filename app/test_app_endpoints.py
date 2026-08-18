@@ -25,10 +25,8 @@ def test_health_endpoint(client):
 def test_metrics_endpoint(client):
     response = client.get("/metrics")
     assert response.status_code == 200
-    data = response.json()
-    assert "total_predict_requests" in data
-    assert "uptime_seconds" in data
-    assert data["model_version"] == settings.APP_VERSION
+    assert "cloud_resource_cpu_usage_ratio" in response.text
+    assert "cloud_resource_scaling_actions_total" in response.text
 
 def test_predict_endpoint_success(client):
     payload = {

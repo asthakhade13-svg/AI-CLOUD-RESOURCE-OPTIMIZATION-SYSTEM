@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import pandas as pd
@@ -8,6 +8,7 @@ import time
 import threading
 from datetime import datetime, timedelta
 from typing import Dict, Any
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from app.config import settings
 from app.utils.logging import logger
@@ -24,6 +25,7 @@ from app.services.optimizer import optimize_cost
 from app.services.controller import get_autoscaler
 from app.services.anomaly import detect_anomaly
 from app.services.explainability import explain_prediction
+from app.utils.prometheus import update_prometheus_metrics
 
 from src.pipeline import BASE_FEATURES, preprocess_single_record, DatasetValidationError
 from src.sla import evaluate_sla
@@ -117,16 +119,10 @@ def health_check():
         "history_buffer_size": len(history_buffer) if history_buffer is not None else 0
     }
 
-@app.get("/metrics", status_code=status.HTTP_200_OK)
+@app.get("/metrics")
 def get_metrics():
-    """Returns backend diagnostics and hits telemetry."""
-    uptime = datetime.now() - datetime.fromisoformat(API_METRICS["start_time"])
-    return {
-        **API_METRICS,
-        "uptime_seconds": round(uptime.total_seconds(), 2),
-        "model_version": settings.APP_VERSION,
-        "model_type": type(model_manager.capacity_model).__name__ if model_manager.capacity_model else None
-    }
+    """Exposes backend execution telemetry and cloud metrics in Prometheus format."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.post("/predict", response_model=PredictResponse)
 def predict_capacity(payload: PredictRequest):
@@ -136,6 +132,7 @@ def predict_capacity(payload: PredictRequest):
     SLA checks, anomaly alerts, and SHAP explainability.
     """
     global history_buffer
+    start_time = time.perf_counter()
     API_METRICS["total_predict_requests"] += 1
     
     if not model_manager.assets_loaded:
@@ -264,6 +261,15 @@ def predict_capacity(payload: PredictRequest):
         
         # 8. SHAP Local Explanations
         xai_res = explain_prediction(scaled_projected_input, decision["recommended_servers"])
+        
+        # 9. Update Prometheus metrics
+        latency = time.perf_counter() - start_time
+        prediction_metrics = {
+            "predicted_servers": capacity["predicted_servers"],
+            "recommended_servers": decision["recommended_servers"],
+            "action": decision["action"]
+        }
+        update_prometheus_metrics(telemetry, prediction_metrics, latency)
         
         return PredictResponse(
             predicted_servers=int(np.round(capacity["predicted_servers"])),
