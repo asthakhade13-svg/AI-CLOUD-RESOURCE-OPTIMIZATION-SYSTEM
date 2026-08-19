@@ -214,9 +214,9 @@
                         users: payload.active_users,
                         traffic: payload.network_traffic,
                         current_servers: payload.current_servers,
-                        predicted_servers: data.predicted_servers,
-                        recommended_servers: data.recommended_servers,
-                        cost: data.hourly_cost,
+                        predicted_servers: data.predicted_servers || payload.current_servers,
+                        recommended_servers: data.recommended_servers || payload.current_servers,
+                        cost: data.hourly_cost || 0.0,
                         response_time: payload.response_time
                     });
                     setHistory(nextHistory);
@@ -224,12 +224,13 @@
                     // Update input current_servers for the next tick
                     setInputs(prev => ({
                         ...prev,
-                        current_servers: data.recommended_servers
+                        current_servers: data.recommended_servers || prev.current_servers
                     }));
 
                 } catch (e) {
                     loggerError(e.message);
                     setError(e.message);
+                    setPrediction(null);
                 } finally {
                     setLoading(false);
                 }
@@ -303,7 +304,17 @@
                 const updateOrCreate = (key, element, options) => {
                     if (!element) return;
                     if (chartsInstances.current[key]) {
-                        chartsInstances.current[key].updateOptions(options);
+                        try {
+                            chartsInstances.current[key].updateOptions(options);
+                        } catch (err) {
+                            console.warn("Chart update failed, recreating:", key, err);
+                            try {
+                                chartsInstances.current[key].destroy();
+                            } catch (dErr) {}
+                            const chart = new ApexCharts(element, options);
+                            chart.render();
+                            chartsInstances.current[key] = chart;
+                        }
                     } else {
                         const chart = new ApexCharts(element, options);
                         chart.render();
@@ -558,16 +569,16 @@
                                     "{prediction?.shap_explanation || 'No active predictions evaluated.'}"
                                 </p>
                                 <div class="space-y-2.5 pt-2">
-                                    {prediction?.shap_contributions && Object.entries(prediction.shap_contributions).map(([cat, val]) => (
+                                    {prediction?.shap_contributions && typeof prediction.shap_contributions === 'object' && Object.entries(prediction.shap_contributions).map(([cat, val]) => (
                                         <div key={cat} class="space-y-1">
                                             <div class="flex justify-between text-xs font-medium">
                                                 <span class="text-slate-400">{cat}</span>
-                                                <span class={val >= 0 ? 'text-rose-400' : 'text-emerald-400'}>
-                                                    {val >= 0 ? '+' : ''}{val.toFixed(4)}
+                                                <span class={typeof val === 'number' && val >= 0 ? 'text-rose-400' : 'text-emerald-400'}>
+                                                    {typeof val === 'number' ? (val >= 0 ? '+' : '') + val.toFixed(4) : '0.0000'}
                                                 </span>
                                             </div>
                                             <div class="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex">
-                                                {val >= 0 ? (
+                                                {typeof val === 'number' && val >= 0 ? (
                                                     <>
                                                         <div class="w-1/2 bg-slate-950"></div>
                                                         <div class="bg-rose-500 h-2 rounded-r-full" style={{ width: `${Math.min(50, val * 50)}%` }}></div>
@@ -575,7 +586,7 @@
                                                 ) : (
                                                     <>
                                                         <div class="w-1/2 flex justify-end">
-                                                            <div class="bg-emerald-500 h-2 rounded-l-full" style={{ width: `${Math.min(50, Math.abs(val) * 50)}%` }}></div>
+                                                            <div class="bg-emerald-500 h-2 rounded-l-full" style={{ width: `${Math.min(50, Math.abs(typeof val === 'number' ? val : 0.0) * 50)}%` }}></div>
                                                         </div>
                                                         <div class="w-1/2 bg-slate-950"></div>
                                                     </>
