@@ -263,6 +263,16 @@ def generate_forecasting_plots(best_models, test_df):
     plt.close()
     print("-> Saved forecast_prediction_errors.png")
 
+_cached_models = {}
+
+def load_forecasting_models():
+    global _cached_models
+    if not _cached_models:
+        _cached_models["5min"] = joblib.load(FORECASTER_5MIN_PATH)
+        _cached_models["10min"] = joblib.load(FORECASTER_10MIN_PATH)
+        _cached_models["15min"] = joblib.load(FORECASTER_15MIN_PATH)
+    return _cached_models["5min"], _cached_models["10min"], _cached_models["15min"]
+
 def forecast_next_workloads(history_df: pd.DataFrame):
     """
     Reusable prediction function. Takes a DataFrame of the last 6 observations
@@ -304,10 +314,8 @@ def forecast_next_workloads(history_df: pd.DataFrame):
     
     X_pred = pd.DataFrame(row_data)[features]
     
-    # Load model files
-    model_5m = joblib.load(FORECASTER_5MIN_PATH)
-    model_10m = joblib.load(FORECASTER_10MIN_PATH)
-    model_15m = joblib.load(FORECASTER_15MIN_PATH)
+    # Load cached model files
+    model_5m, model_10m, model_15m = load_forecasting_models()
     
     # Predict (each outputs a 2D array of shape [1, 6])
     pred_5 = model_5m.predict(X_pred)[0]
