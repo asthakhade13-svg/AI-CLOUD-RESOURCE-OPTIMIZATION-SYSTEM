@@ -22,6 +22,7 @@ ENV PATH=/root/.local/bin:$PATH
 # Copy source codes
 COPY src/ /app/src/
 COPY app/ /app/app/
+COPY k8s/ /app/k8s/
 COPY index.html /app/
 
 EXPOSE 8000

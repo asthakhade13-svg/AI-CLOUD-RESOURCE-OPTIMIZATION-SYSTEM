@@ -52,7 +52,7 @@ API_METRICS: Dict[str, Any] = {
 }
 
 # Env configs
-DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "resource_optimization")
 DB_USER = os.getenv("DB_USER", "postgres")
@@ -61,7 +61,8 @@ ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://localhost:8050")
 
 def get_db_connection():
     """Tries connecting to PostgreSQL with retry counts to handle boot sequence delays."""
-    for i in range(5):
+    max_retries = 1 if DB_HOST in ["127.0.0.1", "localhost"] else 5
+    for i in range(max_retries):
         try:
             conn = psycopg2.connect(
                 host=DB_HOST,
@@ -69,11 +70,12 @@ def get_db_connection():
                 database=DB_NAME,
                 user=DB_USER,
                 password=DB_PASSWORD,
-                connect_timeout=3
+                connect_timeout=1
             )
             return conn
         except Exception:
-            time.sleep(1)
+            if max_retries > 1:
+                time.sleep(1)
     return None
 
 @app.on_event("startup")
