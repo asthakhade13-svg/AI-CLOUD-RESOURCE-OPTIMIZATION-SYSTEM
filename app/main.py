@@ -20,8 +20,11 @@ from app.schemas import (
     OptimizeRequest, OptimizeOutput,
     AnomalyOutput, ForecastOutput,
     RLPredictRequest, RLPredictResponse,
-    RLEvaluateRequest, RLEvaluateResponse, RLStatusResponse
+    RLEvaluateRequest, RLEvaluateResponse, RLStatusResponse,
+    SimulationScenarioRequest, SimulationScenarioResponse,
+    SimulationCompareRequest, SimulationCompareResponse
 )
+
 from app.services.optimizer import optimize_cost
 from app.services.controller import get_autoscaler
 from app.utils.prometheus import update_prometheus_metrics
@@ -506,4 +509,41 @@ def rl_status():
             action_dimension=5,
             active_mode=RL_AUTOSCALING_MODE
         )
+
+
+
+# =====================================================================
+# DIGITAL TWIN SIMULATION ROUTERS
+# =====================================================================
+
+@app.post("/simulation/run-scenario", response_model=SimulationScenarioResponse)
+def run_simulation_scenario(payload: SimulationScenarioRequest):
+    """
+    Gateway Simulation Scenario Route. Evaluates the custom stress scenario 
+    against the in-memory Digital Twin cloud engine.
+    """
+    try:
+        ml_res = requests.post(f"{ML_SERVICE_URL}/simulation/scenario_raw", json=payload.dict(), timeout=10)
+        if ml_res.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"ML Service simulation scenario error: {ml_res.text}")
+        return SimulationScenarioResponse(**ml_res.json())
+    except Exception as e:
+        logger.error(f"Failed to execute Digital Twin scenario run: {e}")
+        raise HTTPException(status_code=502, detail=f"ML Model service unreachable/failed: {str(e)}")
+
+@app.post("/simulation/evaluate-policies", response_model=SimulationCompareResponse)
+def evaluate_simulation_policies(payload: SimulationCompareRequest):
+    """
+    Gateway Simulation Policy Compare Route. Runs comparison benchmarks 
+    comparing Static, Threshold, HPA, ML Predictive, and PPO RL autoscaling.
+    """
+    try:
+        ml_res = requests.post(f"{ML_SERVICE_URL}/simulation/evaluate_raw", json=payload.dict(), timeout=30)
+        if ml_res.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"ML Service simulation compare error: {ml_res.text}")
+        return SimulationCompareResponse(**ml_res.json())
+    except Exception as e:
+        logger.error(f"Failed to execute Digital Twin policy evaluation: {e}")
+        raise HTTPException(status_code=502, detail=f"ML Model service unreachable/failed: {str(e)}")
+
 

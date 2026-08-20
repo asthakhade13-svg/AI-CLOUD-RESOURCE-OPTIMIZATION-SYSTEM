@@ -26,6 +26,7 @@ COPY artifacts/ /app/artifacts/
 COPY data/ /app/data/
 COPY ml_service/ /app/ml_service/
 COPY rl/ /app/rl/
+COPY simulation/ /app/simulation/
 
 EXPOSE 8050
 

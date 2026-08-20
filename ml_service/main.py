@@ -6,7 +6,7 @@ import numpy as np
 import os
 import threading
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 # Import core business logic from src
 from src.pipeline import BASE_FEATURES, preprocess_single_record
@@ -24,6 +24,11 @@ from rl.actions import idx_to_action, idx_to_step
 from rl.evaluator import Evaluator
 from rl.trainer import train_ppo_agent
 from rl.safety import SafetyValidator
+
+# Import Simulation modules
+from simulation.scenarios import WhatIfAnalyzer
+from simulation.experiments import ExperimentSuite
+
 
 app = FastAPI(
     title="ML Model Service",
@@ -335,4 +340,62 @@ def rl_status_raw():
         "state_dimension": 15,
         "action_dimension": 5
     }
+
+
+# =====================================================================
+# DIGITAL TWIN SIMULATION ROUTERS
+# =====================================================================
+
+class SimulationScenarioRawRequest(BaseModel):
+    policy_name: str = "HPA"
+    initial_replicas: int = 5
+    max_steps: int = 288
+    traffic_multiplier: float = 1.0
+    users_multiplier: float = 1.0
+    workload_patterns: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+
+class SimulationCompareRawRequest(BaseModel):
+    initial_replicas: int = 5
+    max_steps: int = 288
+    traffic_multiplier: float = 1.0
+    users_multiplier: float = 1.0
+    workload_patterns: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+
+@app.post("/simulation/scenario_raw")
+def simulation_scenario_raw(payload: SimulationScenarioRawRequest):
+    global rl_agent, rl_model_loaded
+    try:
+        analyzer = WhatIfAnalyzer()
+        res = analyzer.run_custom_scenario(
+            config=payload.dict(),
+            ppo_agent=rl_agent,
+            model_loaded=rl_model_loaded
+        )
+        return {
+            "summary": res["summary"],
+            "history": res["history"]
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Simulation scenario failed: {str(e)}")
+
+@app.post("/simulation/evaluate_raw")
+def simulation_evaluate_raw(payload: SimulationCompareRawRequest):
+    global rl_agent, rl_model_loaded
+    try:
+        suite = ExperimentSuite()
+        results = suite.run_policy_comparison(
+            scenario_config=payload.dict(),
+            ppo_agent=rl_agent,
+            model_loaded=rl_model_loaded
+        )
+        return {"benchmark_results": results}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Simulation comparison failed: {str(e)}")
+
 

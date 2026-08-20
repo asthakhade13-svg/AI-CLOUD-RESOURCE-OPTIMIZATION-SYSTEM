@@ -23,8 +23,10 @@ ENV PATH=/root/.local/bin:$PATH
 COPY src/ /app/src/
 COPY app/ /app/app/
 COPY rl/ /app/rl/
+COPY simulation/ /app/simulation/
 COPY k8s/ /app/k8s/
 COPY index.html /app/
+
 
 EXPOSE 8000
 

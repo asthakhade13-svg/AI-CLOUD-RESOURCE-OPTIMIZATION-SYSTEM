@@ -190,3 +190,32 @@ class RLStatusResponse(BaseModel):
     action_dimension: int
     active_mode: str
 
+# =====================================================================
+# DIGITAL TWIN SIMULATION SCHEMAS
+# =====================================================================
+
+class SimulationScenarioRequest(BaseModel):
+    policy_name: str = Field("HPA", description="Scaling policy: STATIC / THRESHOLD / HPA / ML_PREDICTIVE / RL_PPO")
+    initial_replicas: int = Field(5, ge=1, le=20)
+    max_steps: int = Field(288, ge=10, le=1000)
+    traffic_multiplier: float = Field(1.0, ge=0.1, le=10.0)
+    users_multiplier: float = Field(1.0, ge=0.1, le=10.0)
+    workload_patterns: List[Dict[str, Any]] = Field(default_factory=list)
+    failures: List[Dict[str, Any]] = Field(default_factory=list)
+
+class SimulationScenarioResponse(BaseModel):
+    summary: Dict[str, Any]
+    history: List[Dict[str, Any]]
+
+class SimulationCompareRequest(BaseModel):
+    initial_replicas: int = Field(5, ge=1, le=20)
+    max_steps: int = Field(288, ge=10, le=1000)
+    traffic_multiplier: float = Field(1.0, ge=0.1, le=10.0)
+    users_multiplier: float = Field(1.0, ge=0.1, le=10.0)
+    workload_patterns: List[Dict[str, Any]] = Field(default_factory=list)
+    failures: List[Dict[str, Any]] = Field(default_factory=list)
+
+class SimulationCompareResponse(BaseModel):
+    benchmark_results: List[Dict[str, Any]]
+
+
