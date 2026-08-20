@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 # =====================================================================
 # REQUEST SCHEMAS
@@ -144,3 +144,49 @@ class OptimizeOutput(BaseModel):
     estimated_savings: float
     sla_status: str
     optimization_reason: str
+
+# =====================================================================
+# REINFORCEMENT LEARNING SCHEMAS
+# =====================================================================
+
+class RLPredictRequest(BaseModel):
+    cpu_usage: float = Field(..., ge=0, le=100)
+    memory_usage: float = Field(..., ge=0, le=100)
+    network_traffic: float = Field(..., ge=0)
+    active_users: int = Field(..., ge=0)
+    request_rate: float = Field(..., ge=0)
+    response_time: float = Field(..., ge=0)
+    error_rate: float = Field(..., ge=0, le=100)
+    current_servers: int = Field(..., ge=1)
+    
+    # RL additional observation features
+    predicted_workload: float = Field(..., ge=0, le=100)
+    predicted_required_servers: int = Field(..., ge=1)
+    hourly_cost: float = Field(..., ge=0)
+    sla_status: str = Field("HEALTHY")
+    is_anomaly: bool = Field(False)
+    prev_step: int = Field(0, ge=-2, le=2)
+    hour: float = Field(12.0, ge=0, le=23)
+
+class RLPredictResponse(BaseModel):
+    current_replicas: int
+    recommended_action: str
+    recommended_replicas: int
+    expected_reward: float
+    risk_score: float
+    reason: str
+
+class RLEvaluateRequest(BaseModel):
+    episodes: int = Field(5, ge=1, le=100)
+    seed: int = Field(42, ge=0)
+
+class RLEvaluateResponse(BaseModel):
+    benchmark_results: List[Dict[str, Any]]
+
+class RLStatusResponse(BaseModel):
+    model_loaded: bool
+    checkpoint_exists: bool
+    state_dimension: int
+    action_dimension: int
+    active_mode: str
+

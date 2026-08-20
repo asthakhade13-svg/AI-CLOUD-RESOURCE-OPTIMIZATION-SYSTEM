@@ -18,12 +18,18 @@ from app.schemas import (
     TelemetryPayload, PredictRequest, PredictResponse,
     AutoscaleRequest, AutoscaleOutput,
     OptimizeRequest, OptimizeOutput,
-    AnomalyOutput, ForecastOutput
+    AnomalyOutput, ForecastOutput,
+    RLPredictRequest, RLPredictResponse,
+    RLEvaluateRequest, RLEvaluateResponse, RLStatusResponse
 )
 from app.services.optimizer import optimize_cost
 from app.services.controller import get_autoscaler
 from app.utils.prometheus import update_prometheus_metrics
 from src.sla import evaluate_sla
+
+# Import Safety Layer for RL Autonomous decisions
+from rl.safety import SafetyValidator
+from rl.actions import action_to_step, idx_to_action
 
 app = FastAPI(
     title="AI Cloud Resource Optimization API Gateway",
@@ -58,6 +64,11 @@ DB_NAME = os.getenv("DB_NAME", "resource_optimization")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://localhost:8050")
+
+# Reinforcement Learning Mode (SIMULATION, APPROVAL, AUTONOMOUS)
+RL_AUTOSCALING_MODE = os.getenv("RL_AUTOSCALING_MODE", "SIMULATION")
+gateway_safety_validator = SafetyValidator()
+
 
 def get_db_connection():
     """Tries connecting to PostgreSQL with retry counts to handle boot sequence delays."""
@@ -387,3 +398,112 @@ def evaluate_optimization(payload: OptimizeRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================================
+# REINFORCEMENT LEARNING ROUTERS
+# =====================================================================
+
+@app.post("/rl/predict-action", response_model=RLPredictResponse)
+def rl_predict_action(payload: RLPredictRequest):
+    """
+    Gateway RL Predict Route. Proxies observation payload to ML Model service,
+    enforces the active operation mode (SIMULATION, APPROVAL, AUTONOMOUS) and safety validation.
+    """
+    try:
+        # 1. Forward raw observation request to ML Service
+        ml_res = requests.post(f"{ML_SERVICE_URL}/rl/predict_raw", json=payload.dict(), timeout=5)
+        if ml_res.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"ML Service RL error: {ml_res.text}")
+        rl_data = ml_res.json()
+    except Exception as e:
+        logger.error(f"Failed to communicate with ML Model Service for RL prediction: {e}")
+        raise HTTPException(status_code=502, detail=f"ML Model service unreachable: {str(e)}")
+        
+    recommended_action = rl_data["recommended_action"]
+    recommended_replicas = rl_data["recommended_replicas"]
+    reason = rl_data["reason"]
+    risk_score = rl_data["risk_score"]
+    
+    # 2. Enforce active mode logic
+    mode_upper = RL_AUTOSCALING_MODE.upper()
+    
+    if mode_upper == "SIMULATION":
+        reason = f"[SIMULATION] {reason}"
+        
+    elif mode_upper == "APPROVAL":
+        reason = f"[APPROVAL REQUIRED] {reason}"
+        
+    elif mode_upper == "AUTONOMOUS":
+        # Run proposed action step through the safety validator layer
+        proposed_step = action_to_step(recommended_action)
+        safe_replicas, safe_step, safety_reason = gateway_safety_validator.validate_action(
+            current_replicas=payload.current_servers,
+            proposed_step=proposed_step,
+            metrics=payload.dict()
+        )
+        
+        if safe_step != proposed_step:
+            # Override recommended action to safe action
+            recommended_replicas = safe_replicas
+            # Map safe step back to action string
+            if safe_step == 2: safe_idx = 4
+            elif safe_step == 1: safe_idx = 3
+            elif safe_step == -1: safe_idx = 1
+            elif safe_step == -2: safe_idx = 0
+            else: safe_idx = 2
+            recommended_action = idx_to_action(safe_idx)
+            reason = f"[AUTONOMOUS OVERRIDDEN] {safety_reason} (Original proposed step: {proposed_step})"
+            risk_score = min(1.0, risk_score + 0.3)  # Increase risk since it was overridden
+        else:
+            reason = f"[AUTONOMOUS APPROVED] {reason}"
+            
+    return RLPredictResponse(
+        current_replicas=payload.current_servers,
+        recommended_action=recommended_action,
+        recommended_replicas=recommended_replicas,
+        expected_reward=rl_data["expected_reward"],
+        risk_score=risk_score,
+        reason=reason
+    )
+
+@app.post("/rl/evaluate", response_model=RLEvaluateResponse)
+def rl_evaluate(payload: RLEvaluateRequest):
+    """
+    Gateway RL Evaluate/Train Route. Triggers simulator policy training 
+    and returns baseline benchmarking comparison table.
+    """
+    try:
+        ml_res = requests.post(f"{ML_SERVICE_URL}/rl/evaluate_raw", json=payload.dict(), timeout=600)  # Long timeout for training loops
+        if ml_res.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"ML Service RL evaluate error: {ml_res.text}")
+        return RLEvaluateResponse(**ml_res.json())
+    except Exception as e:
+        logger.error(f"Failed to run RL evaluation benchmark: {e}")
+        raise HTTPException(status_code=502, detail=f"ML Model service unreachable/failed: {str(e)}")
+
+@app.get("/rl/status", response_model=RLStatusResponse)
+def rl_status():
+    """Returns the Reinforcement Learning model state and configuration mode details."""
+    try:
+        ml_res = requests.get(f"{ML_SERVICE_URL}/rl/status_raw", timeout=5)
+        if ml_res.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"ML Service RL status error: {ml_res.text}")
+        status_data = ml_res.json()
+        return RLStatusResponse(
+            model_loaded=status_data["model_loaded"],
+            checkpoint_exists=status_data["checkpoint_exists"],
+            state_dimension=status_data["state_dimension"],
+            action_dimension=status_data["action_dimension"],
+            active_mode=RL_AUTOSCALING_MODE
+        )
+    except Exception as e:
+        # Fallback if ml_service is down
+        return RLStatusResponse(
+            model_loaded=False,
+            checkpoint_exists=False,
+            state_dimension=15,
+            action_dimension=5,
+            active_mode=RL_AUTOSCALING_MODE
+        )
+

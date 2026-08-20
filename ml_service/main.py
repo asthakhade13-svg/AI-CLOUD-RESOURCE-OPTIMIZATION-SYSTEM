@@ -16,6 +16,15 @@ from src.anomaly import detect_anomaly_record
 from src.explainability import explain_prediction_shap
 import shap
 
+# Import RL modules
+import torch
+from rl.agent import PPOAgent
+from rl.state import get_observation
+from rl.actions import idx_to_action, idx_to_step
+from rl.evaluator import Evaluator
+from rl.trainer import train_ppo_agent
+from rl.safety import SafetyValidator
+
 app = FastAPI(
     title="ML Model Service",
     description="Microservice exposing capacity predictions, forecasts, anomalies, and SHAP explainability.",
@@ -35,9 +44,16 @@ anomaly_features = None
 shap_explainer = None
 features_list = None
 
+# Reinforcement Learning Globals
+rl_agent = None
+rl_safety = None
+rl_checkpoint_path = "rl/models/ppo_autoscaler.pth"
+rl_model_loaded = False
+
 # Thread-safe sliding buffer
 history_buffer = None
 buffer_lock = threading.Lock()
+
 
 @app.on_event("startup")
 def load_assets():
@@ -75,6 +91,23 @@ def load_assets():
     # 5. Load SHAP
     if model is not None:
         shap_explainer = shap.TreeExplainer(model)
+        
+    # 6. Initialize RL Agent and Safety Validator
+    global rl_agent, rl_safety, rl_model_loaded
+    rl_agent = PPOAgent(state_dim=15, action_dim=5)
+    rl_safety = SafetyValidator()
+    if os.path.exists(rl_checkpoint_path):
+        try:
+            rl_agent.load(rl_checkpoint_path)
+            rl_model_loaded = True
+            print("Successfully loaded PPO autoscaler checkpoint.")
+        except Exception as e:
+            print(f"Error loading PPO checkpoint: {e}")
+            rl_model_loaded = False
+    else:
+        print("PPO checkpoint not found. Agent must train first in simulation.")
+        rl_model_loaded = False
+
 
 class PredictRawInput(BaseModel):
     cpu_usage: float
@@ -185,3 +218,121 @@ def predict_raw(payload: PredictRawInput):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================================
+# REINFORCEMENT LEARNING ROUTERS
+# =====================================================================
+
+class RLPredictRawInput(BaseModel):
+    cpu_usage: float
+    memory_usage: float
+    network_traffic: float
+    active_users: int
+    request_rate: float
+    response_time: float
+    error_rate: float
+    current_servers: int
+    predicted_workload: float
+    predicted_required_servers: int
+    hourly_cost: float
+    sla_status: str
+    is_anomaly: bool
+    prev_step: int
+    hour: float
+
+class RLEvaluateRawRequest(BaseModel):
+    episodes: int = 5
+    seed: int = 42
+
+@app.post("/rl/predict_raw")
+def rl_predict_raw(payload: RLPredictRawInput):
+    global rl_agent, rl_model_loaded
+    
+    if rl_agent is None:
+        raise HTTPException(status_code=503, detail="RL agent not initialized.")
+        
+    metrics = payload.dict()
+    # Normalize inputs to observation vector (15 dimensions)
+    obs = get_observation(metrics)
+    
+    # Run PPO forward pass to get action and critic estimation
+    with torch.no_grad():
+        state_t = torch.FloatTensor(obs)
+        action_probs = rl_agent.policy_old.actor(state_t)
+        dist = torch.distributions.Categorical(action_probs)
+        
+        # Select action index
+        if rl_model_loaded:
+            action_idx = action_probs.argmax().item()
+        else:
+            action_idx = 2  # default NO_ACTION
+            
+        # Expected reward estimation from critic
+        critic_val = rl_agent.policy_old.critic(state_t).item()
+        
+        # Risk score proportional to categorical distribution entropy (pi uncertainty)
+        dist_entropy = dist.entropy().item()
+        # Max entropy for 5 actions is ln(5) ~ 1.609. Normalize to [0, 1]
+        risk_score = min(1.0, max(0.0, float(dist_entropy) / 1.61))
+        
+    recommended_action = idx_to_action(action_idx)
+    step_change = idx_to_step(action_idx)
+    recommended_replicas = int(np.clip(payload.current_servers + step_change, 1, 20))
+    
+    # Reason message
+    if step_change > 0:
+        reason = f"RL Agent recommends scaling UP by {step_change} server(s) to optimize workload performance."
+    elif step_change < 0:
+        reason = f"RL Agent recommends scaling DOWN by {abs(step_change)} server(s) to reduce hosting costs."
+    else:
+        reason = "RL Agent recommends NO_ACTION as server capacity is currently optimal."
+        
+    return {
+        "current_replicas": payload.current_servers,
+        "recommended_action": recommended_action,
+        "recommended_replicas": recommended_replicas,
+        "expected_reward": float(critic_val),
+        "risk_score": float(risk_score),
+        "reason": reason
+    }
+
+@app.post("/rl/evaluate_raw")
+def rl_evaluate_raw(payload: RLEvaluateRawRequest):
+    global rl_agent, rl_model_loaded
+    
+    try:
+        # 1. Train agent in simulation if episodes > 0
+        if payload.episodes > 0:
+            print(f"Triggering RL simulator training loop for {payload.episodes} episodes...")
+            train_ppo_agent(episodes=payload.episodes, seed=payload.seed)
+            
+            # Reload updated checkpoint weights
+            if os.path.exists(rl_checkpoint_path):
+                rl_agent.load(rl_checkpoint_path)
+                rl_model_loaded = True
+                
+        # 2. Execute benchmark comparison across all autoscaler algorithms
+        evaluator = Evaluator(checkpoint_path=rl_checkpoint_path)
+        df_results = evaluator.run_benchmark(seed=payload.seed)
+        
+        # Convert pandas DataFrame comparison to dict list
+        benchmark_list = df_results.to_dict(orient="records")
+        return {"benchmark_results": benchmark_list}
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"RL evaluation cycle failed: {str(e)}")
+
+@app.get("/rl/status_raw")
+def rl_status_raw():
+    global rl_model_loaded, rl_checkpoint_path
+    checkpoint_exists = os.path.exists(rl_checkpoint_path)
+    return {
+        "model_loaded": rl_model_loaded,
+        "checkpoint_exists": checkpoint_exists,
+        "state_dimension": 15,
+        "action_dimension": 5
+    }
+
