@@ -22,8 +22,10 @@ from app.schemas import (
     RLPredictRequest, RLPredictResponse,
     RLEvaluateRequest, RLEvaluateResponse, RLStatusResponse,
     SimulationScenarioRequest, SimulationScenarioResponse,
-    SimulationCompareRequest, SimulationCompareResponse
+    SimulationCompareRequest, SimulationCompareResponse,
+    MultiObjectiveOptimizeRequest, MultiObjectiveOptimizeResponse
 )
+
 
 from app.services.optimizer import optimize_cost
 from app.services.controller import get_autoscaler
@@ -545,5 +547,26 @@ def evaluate_simulation_policies(payload: SimulationCompareRequest):
     except Exception as e:
         logger.error(f"Failed to execute Digital Twin policy evaluation: {e}")
         raise HTTPException(status_code=502, detail=f"ML Model service unreachable/failed: {str(e)}")
+
+
+# =====================================================================
+# MULTI-OBJECTIVE OPTIMIZER ROUTERS
+# =====================================================================
+
+@app.post("/optimizer/optimize", response_model=MultiObjectiveOptimizeResponse)
+def optimizer_optimize(payload: MultiObjectiveOptimizeRequest):
+    """
+    Gateway Multi-Objective Sizing Optimizer Route. Proxies telemetry payload 
+    to ML Model Service and returns scenario comparisons alongside Pareto optimal lists.
+    """
+    try:
+        ml_res = requests.post(f"{ML_SERVICE_URL}/optimizer/multi_objective_raw", json=payload.dict(), timeout=15)
+        if ml_res.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"ML Service multi-objective optimization error: {ml_res.text}")
+        return MultiObjectiveOptimizeResponse(**ml_res.json())
+    except Exception as e:
+        logger.error(f"Failed to execute multi-objective optimization sizing: {e}")
+        raise HTTPException(status_code=502, detail=f"ML Model service unreachable/failed: {str(e)}")
+
 
 

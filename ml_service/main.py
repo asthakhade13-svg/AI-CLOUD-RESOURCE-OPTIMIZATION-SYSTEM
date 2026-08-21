@@ -29,6 +29,10 @@ from rl.safety import SafetyValidator
 from simulation.scenarios import WhatIfAnalyzer
 from simulation.experiments import ExperimentSuite
 
+# Import Multi-Objective Optimizer modules
+from src.multi_objective_optimizer import run_multi_objective_optimization
+
+
 
 app = FastAPI(
     title="ML Model Service",
@@ -397,5 +401,32 @@ def simulation_evaluate_raw(payload: SimulationCompareRawRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Simulation comparison failed: {str(e)}")
+
+
+# =====================================================================
+# MULTI-OBJECTIVE OPTIMIZER ROUTERS
+# =====================================================================
+
+class MultiObjectiveOptimizeRawRequest(BaseModel):
+    workload: Dict[str, Any]
+    current_configuration: Dict[str, Any]
+    weights: Dict[str, float] = {}
+    constraints: Dict[str, Any] = {}
+
+@app.post("/optimizer/multi_objective_raw")
+def optimizer_multi_objective_raw(payload: MultiObjectiveOptimizeRawRequest):
+    try:
+        res = run_multi_objective_optimization(
+            workload=payload.workload,
+            current_config=payload.current_configuration,
+            weights=payload.weights,
+            constraints=payload.constraints
+        )
+        return res
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Multi-Objective optimization execution failed: {str(e)}")
+
 
 

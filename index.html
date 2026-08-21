@@ -115,6 +115,21 @@
             
             // Historical timeline telemetry dataset state (for charts)
             const [history, setHistory] = useState([]);
+
+            // Multi-Objective Optimizer states
+            const [activeTab, setActiveTab] = useState('capacity'); // 'capacity' or 'optimizer'
+            const [optWeights, setOptWeights] = useState({
+                cost: 1.0,
+                latency: 1.0,
+                sla: 1.0,
+                carbon: 1.0,
+                energy: 0.5,
+                overprovisioning: 0.5,
+                underprovisioning: 0.8,
+                stability: 0.3
+            });
+            const [optResult, setOptResult] = useState(null);
+            const [optLoading, setOptLoading] = useState(false);
             
             // Ref to track charts instances for destruction/re-draw
             const chartsRefs = {
@@ -123,9 +138,11 @@
                 users: useRef(null),
                 capacity: useRef(null),
                 response: useRef(null),
-                cost: useRef(null)
+                cost: useRef(null),
+                pareto: useRef(null)
             };
             const chartsInstances = useRef({});
+
 
             // 1. Initial health check and seed initial historical records
             useEffect(() => {
@@ -281,6 +298,137 @@
                 triggerPrediction(simInputs);
             };
 
+            const triggerOptimization = async (customWeights = optWeights) => {
+                setOptLoading(true);
+                setError(null);
+                try {
+                    const reqRate = parseFloat(inputs.request_rate || (inputs.active_users * 4.2));
+                    const predReq = parseInt(prediction?.recommended_servers || inputs.current_servers);
+                    const payload = {
+                        workload: {
+                            request_rate: reqRate,
+                            active_users: parseInt(inputs.active_users),
+                            predicted_required_servers: predReq
+                        },
+                        current_configuration: {
+                            replicas: parseInt(inputs.current_servers),
+                            instance_type: "m5.large",
+                            cpu_alloc: 2.0,
+                            mem_alloc: 8.0,
+                            region: "us-east-1"
+                        },
+                        weights: customWeights,
+                        constraints: {
+                            min_replicas: parseInt(inputs.min_servers),
+                            max_replicas: parseInt(inputs.max_servers),
+                            target_latency: 200.0,
+                            max_error_rate: 1.0
+                        }
+                    };
+                    const res = await fetch(`${API_URL}/optimizer/optimize`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!res.ok) throw new Error(await res.text());
+                    const data = await res.json();
+                    setOptResult(data);
+                } catch (e) {
+                    console.error("Optimization failed:", e);
+                    setError("Optimization failed: " + e.message);
+                } finally {
+                    setOptLoading(false);
+                }
+            };
+
+            const renderParetoChart = () => {
+                if (!optResult || !chartsRefs.pareto.current) return;
+                
+                const paretoFront = optResult.pareto_front || [];
+                const recommended = optResult.recommended_configuration;
+                const estCost = optResult.estimated_cost;
+                const estLat = optResult.estimated_latency;
+                
+                const seriesData = paretoFront.map(c => [parseFloat(c.cost.toFixed(4)), parseFloat(c.latency.toFixed(1))]);
+                const recData = [[parseFloat(estCost.toFixed(4)), parseFloat(estLat.toFixed(1))]];
+                
+                const options = {
+                    chart: {
+                        type: 'scatter',
+                        height: 250,
+                        toolbar: { show: false },
+                        background: 'transparent'
+                    },
+                    theme: { mode: 'dark' },
+                    grid: { borderColor: '#1e293b', strokeDashArray: 4 },
+                    series: [
+                        { name: 'Pareto Candidate', data: seriesData },
+                        { name: 'Recommended Config', data: recData }
+                    ],
+                    colors: ['#0ea5e9', '#2ecc71'],
+                    markers: {
+                        size: [6, 10],
+                        strokeWidth: 1,
+                        fillOpacity: [0.6, 1.0],
+                        shape: ["circle", "square"]
+                    },
+                    xaxis: {
+                        title: { text: 'Hourly Cost ($)', style: { color: '#94a3b8' } },
+                        labels: { style: { colors: '#64748b' }, formatter: (val) => '$' + parseFloat(val).toFixed(2) }
+                    },
+                    yaxis: {
+                        title: { text: 'Latency (ms)', style: { color: '#94a3b8' } },
+                        labels: { style: { colors: '#64748b' } }
+                    },
+                    tooltip: {
+                        theme: 'dark',
+                        custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                            if (seriesIndex === 1) {
+                                return '<div class="p-3 bg-slate-900 border border-slate-800 text-xs rounded text-slate-100 shadow-lg">' +
+                                    '<b class="text-emerald-400">Selected Optimal:</b><br/>' +
+                                    recommended.replicas + 'x ' + recommended.instance_type + '<br/>' +
+                                    'Cost: $' + estCost.toFixed(4) + '/hr<br/>' +
+                                    'Latency: ' + estLat.toFixed(1) + ' ms' +
+                                    '</div>';
+                            }
+                            const p = paretoFront[dataPointIndex];
+                            if (!p) return '';
+                            return '<div class="p-3 bg-slate-900 border border-slate-800 text-xs rounded text-slate-100 shadow-lg">' +
+                                '<b class="text-brand-400">' + p.replicas + 'x ' + p.instance_type + '</b> (' + p.region + ')<br/>' +
+                                'CPU: ' + p.cpu_alloc + ' cores | Mem: ' + p.mem_alloc + ' GB<br/>' +
+                                'Cost: $' + p.cost.toFixed(4) + '/hr<br/>' +
+                                'Latency: ' + p.latency.toFixed(1) + ' ms<br/>' +
+                                'Carbon: ' + p.carbon.toFixed(1) + ' gCO2/hr' +
+                                '</div>';
+                        }
+                    },
+                    legend: { show: true, labels: { colors: '#94a3b8' } }
+                };
+                
+                if (chartsInstances.current.pareto) {
+                    try {
+                        chartsInstances.current.pareto.updateOptions(options);
+                    } catch (err) {
+                        try { chartsInstances.current.pareto.destroy(); } catch (d) {}
+                        const chart = new ApexCharts(chartsRefs.pareto.current, options);
+                        chart.render();
+                        chartsInstances.current.pareto = chart;
+                    }
+                } else {
+                    const chart = new ApexCharts(chartsRefs.pareto.current, options);
+                    chart.render();
+                    chartsInstances.current.pareto = chart;
+                }
+            };
+
+            // Trigger Pareto plot on tab or result updates
+            useEffect(() => {
+                if (activeTab === 'optimizer' && optResult) {
+                    renderParetoChart();
+                }
+            }, [activeTab, optResult]);
+
+
             const handleInputChange = (e) => {
                 const { name, value } = e.target;
                 setInputs(prev => ({
@@ -424,273 +572,429 @@
                     {/* Main Container Layout */}
                     <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
                         
-                        {/* Simulation & Controls Top Panel */}
-                        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                            
-                            {/* Telemetry Input Panel */}
-                            <div className="lg:col-span-3 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                <div className="flex items-center justify-between border-b border-slate-900 pb-3">
-                                    <div className="flex items-center gap-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="2" y1="14" x2="6" y2="14"/><line x1="10" y1="8" x2="14" y2="8"/><line x1="18" y1="16" x2="22" y2="16"/></svg>
-                                        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Real-Time Telemetry Control</h2>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => runSimulation('healthy')} className="px-2.5 py-1 text-xs font-medium bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded">
-                                            Normal Load
-                                        </button>
-                                        <button onClick={() => runSimulation('traffic_spike')} className="px-2.5 py-1 text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded">
-                                            Spike Surge
-                                        </button>
-                                        <button onClick={() => runSimulation('memory_leak')} className="px-2.5 py-1 text-xs font-medium bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded">
-                                            Mem Leak
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                <form onSubmit={(e) => { e.preventDefault(); triggerPrediction(inputs); }} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1">CPU Usage (%)</label>
-                                        <input type="number" step="0.1" name="cpu_usage" value={inputs.cpu_usage} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1">Memory (%)</label>
-                                        <input type="number" step="0.1" name="memory_usage" value={inputs.memory_usage} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1">Traffic (Mbps)</label>
-                                        <input type="number" step="0.1" name="network_traffic" value={inputs.network_traffic} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1">Active Users</label>
-                                        <input type="number" name="active_users" value={inputs.active_users} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1">Current Servers</label>
-                                        <input type="number" name="current_servers" value={inputs.current_servers} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1">Response Time (ms)</label>
-                                        <input type="number" name="response_time" value={inputs.response_time} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1">Error Rate (%)</label>
-                                        <input type="number" step="0.01" name="error_rate" value={inputs.error_rate} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
-                                    </div>
-                                    <div className="flex items-end">
-                                        <button type="submit" disabled={loading} className="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg text-sm px-4 py-2 transition flex items-center justify-center gap-2">
-                                            {loading ? <span className="h-4 w-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span> : <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>}
-                                            Analyze Slices
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                            
-                            {/* Running Decision Metrics */}
-                            <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4 flex flex-col justify-between">
-                                <div>
-                                    <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-500"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                                        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Scale Orchestrator</h2>
-                                    </div>
-                                    <div className="mt-4 space-y-2">
-                                        <div className="flex justify-between items-center text-xs">
-                                            <span className="text-slate-400">Scaling Action:</span>
-                                            <span className={`px-2.5 py-1 rounded text-xs font-bold ${
-                                                prediction?.action === 'SCALE_UP' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                                                prediction?.action === 'SCALE_DOWN' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
-                                                'bg-slate-800 text-slate-400'
-                                            }`}>
-                                                {prediction?.action || 'NO_ACTION'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-xs">
-                                            <span className="text-slate-400">SLA Status:</span>
-                                            <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${
-                                                prediction?.sla_status === 'VIOLATED' ? 'bg-rose-500/10 text-rose-400' :
-                                                prediction?.sla_status === 'AT_RISK' ? 'bg-amber-500/10 text-amber-400' :
-                                                'bg-emerald-500/10 text-emerald-400'
-                                            }`}>
-                                                {prediction?.sla_status || 'HEALTHY'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-xs">
-                                            <span className="text-slate-400">Cooldown Lock:</span>
-                                            <span className={`font-mono font-medium ${prediction?.cooldown_active ? 'text-amber-500' : 'text-slate-400'}`}>
-                                                {prediction?.cooldown_active ? 'Locked (Cooldown Active)' : 'Active (Ready)'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="text-[10px] text-slate-500 font-mono pt-3 border-t border-slate-900">
-                                    Trigger reasons: {prediction?.reason || 'System capacity stable.'}
-                                </div>
-                            </div>
+                        {/* Tab Switcher */}
+                        <div className="flex gap-2 border-b border-slate-900 pb-3">
+                            <button onClick={() => setActiveTab('capacity')} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'capacity' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+                                Capacity Dashboard
+                            </button>
+                            <button onClick={() => { setActiveTab('optimizer'); triggerOptimization(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'optimizer' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+                                Multi-Objective Optimizer
+                            </button>
                         </div>
 
-                        {/* Error Notification Alert */}
-                        {error && (
-                            <div className="flex items-center gap-3 p-4 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 flex-shrink-0"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                                <div className="text-sm font-medium">Evaluation Error: {error}</div>
-                            </div>
+                        {activeTab === 'capacity' && (
+                            <>
+                                {/* Simulation & Controls Top Panel */}
+                                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                                    
+                                    {/* Telemetry Input Panel */}
+                                    <div className="lg:col-span-3 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
+                                        <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                                            <div className="flex items-center gap-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="2" y1="14" x2="6" y2="14"/><line x1="10" y1="8" x2="14" y2="8"/><line x1="18" y1="16" x2="22" y2="16"/></svg>
+                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Real-Time Telemetry Control</h2>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => runSimulation('healthy')} className="px-2.5 py-1 text-xs font-medium bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded">
+                                                    Normal Load
+                                                </button>
+                                                <button onClick={() => runSimulation('traffic_spike')} className="px-2.5 py-1 text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded">
+                                                    Spike Surge
+                                                </button>
+                                                <button onClick={() => runSimulation('memory_leak')} className="px-2.5 py-1 text-xs font-medium bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded">
+                                                    Mem Leak
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <form onSubmit={(e) => { e.preventDefault(); triggerPrediction(inputs); }} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-medium text-slate-400 mb-1">CPU Usage (%)</label>
+                                                <input type="number" step="0.1" name="cpu_usage" value={inputs.cpu_usage} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-slate-400 mb-1">Memory (%)</label>
+                                                <input type="number" step="0.1" name="memory_usage" value={inputs.memory_usage} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-slate-400 mb-1">Traffic (Mbps)</label>
+                                                <input type="number" step="0.1" name="network_traffic" value={inputs.network_traffic} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-slate-400 mb-1">Active Users</label>
+                                                <input type="number" name="active_users" value={inputs.active_users} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-slate-400 mb-1">Current Servers</label>
+                                                <input type="number" name="current_servers" value={inputs.current_servers} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-slate-400 mb-1">Response Time (ms)</label>
+                                                <input type="number" name="response_time" value={inputs.response_time} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-slate-400 mb-1">Error Rate (%)</label>
+                                                <input type="number" step="0.01" name="error_rate" value={inputs.error_rate} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                            </div>
+                                            <div className="flex items-end">
+                                                <button type="submit" disabled={loading} className="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg text-sm px-4 py-2 transition flex items-center justify-center gap-2">
+                                                    {loading ? <span className="h-4 w-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span> : <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>}
+                                                    Analyze Slices
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    
+                                    {/* Running Decision Metrics */}
+                                    <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4 flex flex-col justify-between">
+                                        <div>
+                                            <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-500"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Scale Orchestrator</h2>
+                                            </div>
+                                            <div className="mt-4 space-y-2">
+                                                <div className="flex justify-between items-center text-xs">
+                                                    <span className="text-slate-400">Scaling Action:</span>
+                                                    <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                                        prediction?.action === 'SCALE_UP' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                                                        prediction?.action === 'SCALE_DOWN' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
+                                                        'bg-slate-800 text-slate-400'
+                                                    }`}>
+                                                        {prediction?.action || 'NO_ACTION'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-xs">
+                                                    <span className="text-slate-400">SLA Status:</span>
+                                                    <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${
+                                                        prediction?.sla_status === 'VIOLATED' ? 'bg-rose-500/10 text-rose-400' :
+                                                        prediction?.sla_status === 'AT_RISK' ? 'bg-amber-500/10 text-amber-400' :
+                                                        'bg-emerald-500/10 text-emerald-400'
+                                                    }`}>
+                                                        {prediction?.sla_status || 'HEALTHY'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-xs">
+                                                    <span className="text-slate-400">Cooldown Lock:</span>
+                                                    <span className={`font-mono font-medium ${prediction?.cooldown_active ? 'text-amber-500' : 'text-slate-400'}`}>
+                                                        {prediction?.cooldown_active ? 'Locked (Cooldown Active)' : 'Active (Ready)'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 font-mono pt-3 border-t border-slate-900">
+                                            Trigger reasons: {prediction?.reason || 'System capacity stable.'}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Error Notification Alert */}
+                                {error && (
+                                    <div className="flex items-center gap-3 p-4 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 flex-shrink-0"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                        <div className="text-sm font-medium">Evaluation Error: {error}</div>
+                                    </div>
+                                )}
+
+                                {/* Metric Overview Widgets Cards */}
+                                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                        <div className="text-xs text-slate-400">CPU Usage</div>
+                                        <div className="text-2xl font-bold font-mono text-brand-500">{inputs.cpu_usage}%</div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                        <div className="text-xs text-slate-400">Memory Usage</div>
+                                        <div className="text-2xl font-bold font-mono text-purple-400">{inputs.memory_usage}%</div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                        <div className="text-xs text-slate-400">Active Sessions</div>
+                                        <div className="text-2xl font-bold font-mono text-emerald-400">{inputs.active_users}</div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                        <div className="text-xs text-slate-400">Capacity (Current / Target)</div>
+                                        <div className="text-2xl font-bold font-mono text-slate-200">
+                                            {inputs.current_servers} <span className="text-xs text-slate-500">/ {prediction?.recommended_servers || inputs.current_servers}</span>
+                                        </div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                        <div className="text-xs text-slate-400">Hourly Costs</div>
+                                        <div className="text-2xl font-bold font-mono text-pink-400">${prediction?.hourly_cost || '0.00'}/hr</div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                        <div className="text-xs text-slate-400">Projected Daily Savings</div>
+                                        <div className="text-2xl font-bold font-mono text-emerald-400">${prediction?.estimated_savings || '0.00'}</div>
+                                    </div>
+                                </div>
+
+                                {/* Explainability & Anomaly Panels */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    
+                                    {/* SHAP XAI Explainability Panel */}
+                                    <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
+                                        <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Explainable AI (SHAP Contributions)</h2>
+                                        </div>
+                                        <p className="text-xs text-slate-300 italic border-l-2 border-brand-500 pl-3">
+                                            "{prediction?.shap_explanation || 'No active predictions evaluated.'}"
+                                        </p>
+                                        <div className="space-y-2.5 pt-2">
+                                            {prediction?.shap_contributions && typeof prediction.shap_contributions === 'object' && Object.entries(prediction.shap_contributions).map(([cat, val]) => (
+                                                <div key={cat} className="space-y-1">
+                                                    <div className="flex justify-between text-xs font-medium">
+                                                        <span className="text-slate-400">{cat}</span>
+                                                        <span className={typeof val === 'number' && val >= 0 ? 'text-rose-400' : 'text-emerald-400'}>
+                                                            {typeof val === 'number' ? (val >= 0 ? '+' : '') + val.toFixed(4) : '0.0000'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex">
+                                                        {typeof val === 'number' && val >= 0 ? (
+                                                            <>
+                                                                <div className="w-1/2 bg-slate-950"></div>
+                                                                <div className="bg-rose-500 h-2 rounded-r-full" style={{ width: `${Math.min(50, val * 50)}%` }}></div>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <div className="w-1/2 flex justify-end">
+                                                                    <div className="bg-emerald-500 h-2 rounded-l-full" style={{ width: `${Math.min(50, Math.abs(typeof val === 'number' ? val : 0.0) * 50)}%` }}></div>
+                                                                </div>
+                                                                <div className="w-1/2 bg-slate-950"></div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Anomaly Detection Panel */}
+                                    <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
+                                        <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                                            <div className="flex items-center gap-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-purple-500"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">AI Anomaly Status</h2>
+                                            </div>
+                                            {prediction && (
+                                                <span className={`px-2 py-0.5 rounded text-xs font-semibold ${prediction.is_anomaly ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                                    {prediction.is_anomaly ? 'ANOMALY DETECTED' : 'NORMAL BEHAVIOR'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {prediction && (
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
+                                                        <div className="text-xs text-slate-500">Severity</div>
+                                                        <div className={`text-sm font-bold mt-1 ${getSeverityColor(prediction.severity)} inline-block px-2 py-0.5 rounded border`}>
+                                                            {prediction.severity}
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
+                                                        <div className="text-xs text-slate-500">Anomaly Probability Score</div>
+                                                        <div className="text-sm font-bold text-slate-300 mt-1">
+                                                            {(prediction.anomaly_score * 100).toFixed(1)}%
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <div className="text-xs text-slate-500">Affected Metrics</div>
+                                                    <div className="flex flex-wrap gap-1.5 mt-1">
+                                                        {prediction.affected_metrics.length > 0 ? (
+                                                            prediction.affected_metrics.map(col => (
+                                                                <span key={col} className="px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-semibold rounded">
+                                                                    {col}
+                                                                </span>
+                                                            ))
+                                                        ) : (
+                                                            <span className="text-xs text-slate-400 italic">No metrics showing anomalies</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <div className="text-xs text-slate-500">Action Recommendation</div>
+                                                    <p className="text-xs text-slate-300">
+                                                        {prediction.recommendation}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Interactive Charts Timelines Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">CPU Utilization Timeline</h3>
+                                        <div ref={chartsRefs.cpu} className="h-60"></div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Memory Utilization Timeline</h3>
+                                        <div ref={chartsRefs.memory} className="h-60"></div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Active Users Timeline</h3>
+                                        <div ref={chartsRefs.users} className="h-60"></div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Capacity: Current vs predicted vs Recommended</h3>
+                                        <div ref={chartsRefs.capacity} className="h-60"></div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Response Time vs SLA Threshold</h3>
+                                        <div ref={chartsRefs.response} className="h-60"></div>
+                                    </div>
+                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Hosting Costs Timeline</h3>
+                                        <div ref={chartsRefs.cost} className="h-60"></div>
+                                    </div>
+                                </div>
+                            </>
                         )}
 
-                        {/* Metric Overview Widgets Cards */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-                            <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
-                                <div className="text-xs text-slate-400">CPU Usage</div>
-                                <div className="text-2xl font-bold font-mono text-brand-500">{inputs.cpu_usage}%</div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
-                                <div className="text-xs text-slate-400">Memory Usage</div>
-                                <div className="text-2xl font-bold font-mono text-purple-400">{inputs.memory_usage}%</div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
-                                <div className="text-xs text-slate-400">Active Sessions</div>
-                                <div className="text-2xl font-bold font-mono text-emerald-400">{inputs.active_users}</div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
-                                <div className="text-xs text-slate-400">Capacity (Current / Target)</div>
-                                <div className="text-2xl font-bold font-mono text-slate-200">
-                                    {inputs.current_servers} <span className="text-xs text-slate-500">/ {prediction?.recommended_servers || inputs.current_servers}</span>
-                                </div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
-                                <div className="text-xs text-slate-400">Hourly Costs</div>
-                                <div className="text-2xl font-bold font-mono text-pink-400">${prediction?.hourly_cost || '0.00'}/hr</div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
-                                <div className="text-xs text-slate-400">Projected Daily Savings</div>
-                                <div className="text-2xl font-bold font-mono text-emerald-400">${prediction?.estimated_savings || '0.00'}</div>
-                            </div>
-                        </div>
-
-                        {/* Explainability & Anomaly Panels */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            
-                            {/* SHAP XAI Explainability Panel */}
-                            <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                                    <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Explainable AI (SHAP Contributions)</h2>
-                                </div>
-                                <p className="text-xs text-slate-300 italic border-l-2 border-brand-500 pl-3">
-                                    "{prediction?.shap_explanation || 'No active predictions evaluated.'}"
-                                </p>
-                                <div className="space-y-2.5 pt-2">
-                                    {prediction?.shap_contributions && typeof prediction.shap_contributions === 'object' && Object.entries(prediction.shap_contributions).map(([cat, val]) => (
-                                        <div key={cat} className="space-y-1">
-                                            <div className="flex justify-between text-xs font-medium">
-                                                <span className="text-slate-400">{cat}</span>
-                                                <span className={typeof val === 'number' && val >= 0 ? 'text-rose-400' : 'text-emerald-400'}>
-                                                    {typeof val === 'number' ? (val >= 0 ? '+' : '') + val.toFixed(4) : '0.0000'}
-                                                </span>
-                                            </div>
-                                            <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex">
-                                                {typeof val === 'number' && val >= 0 ? (
-                                                    <>
-                                                        <div className="w-1/2 bg-slate-950"></div>
-                                                        <div className="bg-rose-500 h-2 rounded-r-full" style={{ width: `${Math.min(50, val * 50)}%` }}></div>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <div className="w-1/2 flex justify-end">
-                                                            <div className="bg-emerald-500 h-2 rounded-l-full" style={{ width: `${Math.min(50, Math.abs(typeof val === 'number' ? val : 0.0) * 50)}%` }}></div>
-                                                        </div>
-                                                        <div className="w-1/2 bg-slate-950"></div>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                            
-                            {/* Anomaly Detection Panel */}
-                            <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                <div className="flex items-center justify-between border-b border-slate-900 pb-3">
-                                    <div className="flex items-center gap-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-purple-500"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                                        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">AI Anomaly Status</h2>
+                        {activeTab === 'optimizer' && (
+                            <div className="space-y-6">
+                                {/* Error Notification Alert */}
+                                {error && (
+                                    <div className="flex items-center gap-3 p-4 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 flex-shrink-0"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                        <div className="text-sm font-medium">Optimizer Error: {error}</div>
                                     </div>
-                                    {prediction && (
-                                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${prediction.is_anomaly ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                                            {prediction.is_anomaly ? 'ANOMALY DETECTED' : 'NORMAL BEHAVIOR'}
-                                        </span>
-                                    )}
-                                </div>
-                                {prediction && (
-                                    <div className="space-y-4">
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
-                                                <div className="text-xs text-slate-500">Severity</div>
-                                                <div className={`text-sm font-bold mt-1 ${getSeverityColor(prediction.severity)} inline-block px-2 py-0.5 rounded border`}>
-                                                    {prediction.severity}
-                                                </div>
-                                            </div>
-                                            <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
-                                                <div className="text-xs text-slate-500">Anomaly Probability Score</div>
-                                                <div className="text-sm font-bold text-slate-300 mt-1">
-                                                    {(prediction.anomaly_score * 100).toFixed(1)}%
-                                                </div>
-                                            </div>
+                                )}
+
+                                {/* Weights & Constraints Panel */}
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                    
+                                    {/* Priority Sliders */}
+                                    <div className="lg:col-span-2 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
+                                        <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><circle cx="12" cy="12" r="3"/><path d="M3 16h18M3 8h18"/></svg>
+                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Configurable Objective Priority Weights</h2>
                                         </div>
-                                        <div className="space-y-1">
-                                            <div className="text-xs text-slate-500">Affected Metrics</div>
-                                            <div className="flex flex-wrap gap-1.5 mt-1">
-                                                {prediction.affected_metrics.length > 0 ? (
-                                                    prediction.affected_metrics.map(col => (
-                                                        <span key={col} className="px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-semibold rounded">
-                                                            {col}
+                                        
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            {Object.entries(optWeights).map(([name, weight]) => (
+                                                <div key={name} className="space-y-1.5">
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-slate-400 capitalize">{name.replace('underprovisioning', 'Underprovisioning').replace('overprovisioning', 'Overprovisioning')} Priority:</span>
+                                                        <span className="font-mono font-bold text-brand-400">{weight.toFixed(1)}</span>
+                                                    </div>
+                                                    <input 
+                                                        type="range" 
+                                                        min="0" 
+                                                        max="2" 
+                                                        step="0.1" 
+                                                        value={weight} 
+                                                        onChange={(e) => {
+                                                            const newW = { ...optWeights, [name]: parseFloat(e.target.value) };
+                                                            setOptWeights(newW);
+                                                            triggerOptimization(newW);
+                                                        }} 
+                                                        className="w-full h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-brand-500" 
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Optimization Decision Summary Card */}
+                                    <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 flex flex-col justify-between border-slate-900">
+                                        <div>
+                                            <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-500"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Optimization Verdict</h2>
+                                            </div>
+                                            
+                                            {optResult ? (
+                                                <div className="mt-4 space-y-3">
+                                                    <div className="flex justify-between items-center text-xs">
+                                                        <span className="text-slate-400">Optimization Index Score:</span>
+                                                        <span className="px-2 py-0.5 rounded text-xs font-bold bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                                                            {optResult.optimization_score}/100
                                                         </span>
-                                                    ))
-                                                ) : (
-                                                    <span className="text-xs text-slate-400 italic">No metrics showing anomalies</span>
-                                                )}
-                                            </div>
+                                                    </div>
+                                                    <div className="flex justify-between items-center text-xs">
+                                                        <span className="text-slate-400">Recommended Config:</span>
+                                                        <span className="font-mono text-emerald-400 font-bold">
+                                                            {optResult.recommended_configuration.replicas}x {optResult.recommended_configuration.instance_type}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center text-xs">
+                                                        <span className="text-slate-400">Region & Cores:</span>
+                                                        <span className="text-slate-300 font-mono">
+                                                            {optResult.recommended_configuration.region} ({optResult.recommended_configuration.cpu_allocation} vCPUs)
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center text-xs">
+                                                        <span className="text-slate-400">SLA Status:</span>
+                                                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${optResult.sla_status === 'HEALTHY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                            {optResult.sla_status}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="text-slate-500 text-xs italic mt-4">Compute optimization to load recommendations.</div>
+                                            )}
                                         </div>
-                                        <div className="space-y-1">
-                                            <div className="text-xs text-slate-500">Action Recommendation</div>
-                                            <p className="text-xs text-slate-300">
-                                                {prediction.recommendation}
-                                            </p>
+                                        
+                                        <button onClick={() => triggerOptimization()} disabled={optLoading} className="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg text-sm px-4 py-2 mt-4 transition flex items-center justify-center gap-2">
+                                            {optLoading ? <span className="h-4 w-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span> : 'Calculate Slices'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {optResult && (
+                                    <div className="space-y-4">
+                                        <div className="text-xs text-slate-400 border-l-2 border-emerald-500 pl-3 italic bg-slate-900/10 py-2 rounded-r-lg">
+                                            "{optResult.reason}"
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                            {/* Pareto Scatter Plot */}
+                                            <div className="lg:col-span-1 border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-80">
+                                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Pareto-Front (Latency vs Cost)</h3>
+                                                <div ref={chartsRefs.pareto} className="h-64"></div>
+                                            </div>
+                                            
+                                            {/* Scenario Comparison Table */}
+                                            <div className="lg:col-span-2 border border-slate-900 bg-slate-900/10 rounded-xl p-5 overflow-x-auto">
+                                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Trade-Off Scenario Comparisons</h3>
+                                                
+                                                <table className="w-full text-left text-xs border-collapse">
+                                                    <thead>
+                                                        <tr className="border-b border-slate-800 text-slate-400 font-bold">
+                                                            <th className="py-2">Scenario</th>
+                                                            <th className="py-2">Config (Replicas / Instance)</th>
+                                                            <th className="py-2">Region</th>
+                                                            <th className="py-2">Hourly Cost</th>
+                                                            <th className="py-2">Latency</th>
+                                                            <th className="py-2">Carbon (g/hr)</th>
+                                                            <th className="py-2">Energy (kWh)</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {optResult.comparisons.map((c, i) => (
+                                                            <tr key={i} className="border-b border-slate-900 hover:bg-slate-900/10 text-slate-200">
+                                                                <td className="py-2.5 font-semibold text-brand-400">{c.scenario.replace(' Configuration', '')}</td>
+                                                                <td className="py-2.5 font-mono">{c.replicas}x {c.instance_type} ({c.cpu_alloc}c/{c.mem_alloc}g)</td>
+                                                                <td className="py-2.5">{c.region}</td>
+                                                                <td className="py-2.5 font-mono text-pink-400">${c.cost.toFixed(4)}/hr</td>
+                                                                <td className="py-2.5 font-mono text-amber-400">{c.latency.toFixed(1)} ms</td>
+                                                                <td className="py-2.5 font-mono text-emerald-400">{c.carbon.toFixed(1)} g</td>
+                                                                <td className="py-2.5 font-mono text-purple-400">{c.energy.toFixed(3)} kWh</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
                             </div>
-                        </div>
-
-                        {/* Interactive Charts Timelines Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                            <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">CPU Utilization Timeline</h3>
-                                <div ref={chartsRefs.cpu} className="h-60"></div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Memory Utilization Timeline</h3>
-                                <div ref={chartsRefs.memory} className="h-60"></div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Active Users Timeline</h3>
-                                <div ref={chartsRefs.users} className="h-60"></div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Capacity: Current vs predicted vs Recommended</h3>
-                                <div ref={chartsRefs.capacity} className="h-60"></div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Response Time vs SLA Threshold</h3>
-                                <div ref={chartsRefs.response} className="h-60"></div>
-                            </div>
-                            <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Hosting Costs Timeline</h3>
-                                <div ref={chartsRefs.cost} className="h-60"></div>
-                            </div>
-                        </div>
+                        )}
 
                     </div>
                 </div>
             );
+
         }
 
         // Render React components to DOM root

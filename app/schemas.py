@@ -219,3 +219,28 @@ class SimulationCompareResponse(BaseModel):
     benchmark_results: List[Dict[str, Any]]
 
 
+# =====================================================================
+# MULTI-OBJECTIVE OPTIMIZER SCHEMAS
+# =====================================================================
+
+class MultiObjectiveOptimizeRequest(BaseModel):
+    workload: Dict[str, Any] = Field(..., description="Workload demand: request_rate, active_users, predicted_required_servers")
+    current_configuration: Dict[str, Any] = Field(..., description="Current server profile: replicas, instance_type, cpu_alloc, mem_alloc, region")
+    weights: Dict[str, float] = Field(default_factory=dict, description="Objective weights: cost, latency, carbon, etc.")
+    constraints: Dict[str, Any] = Field(default_factory=dict, description="Operational constraints: min_replicas, target_latency, etc.")
+
+class MultiObjectiveOptimizeResponse(BaseModel):
+    recommended_configuration: Dict[str, Any]
+    estimated_cost: float
+    estimated_latency: float
+    sla_status: str
+    energy_consumption: float
+    carbon_emissions: float
+    overprovisioning: float
+    optimization_score: float
+    reason: str
+    comparisons: List[Dict[str, Any]]
+    pareto_front: List[Dict[str, Any]]
+
+
+
