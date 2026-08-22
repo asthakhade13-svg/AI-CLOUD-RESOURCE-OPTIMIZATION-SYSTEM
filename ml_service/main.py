@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 import joblib
+import json
 import pandas as pd
 import numpy as np
 import os
@@ -29,8 +30,20 @@ from rl.safety import SafetyValidator
 from simulation.scenarios import WhatIfAnalyzer
 from simulation.experiments import ExperimentSuite
 
-# Import Multi-Objective Optimizer modules
 from src.multi_objective_optimizer import run_multi_objective_optimization
+
+from src.model_monitor import (
+    log_prediction_and_resolve_actuals,
+    calculate_drift,
+    get_performance_metrics,
+    trigger_retraining_pipeline,
+    rollback_to_previous_stable,
+    REGISTRY_PATH,
+    init_registry_and_dirs
+)
+
+import time
+
 
 
 
@@ -143,6 +156,7 @@ def health():
 @app.post("/predict_raw")
 def predict_raw(payload: PredictRawInput):
     global model, scaler, history_buffer, anomaly_detector, anomaly_scaler, anomaly_features, shap_explainer, features_list
+    start_time = time.perf_counter()
     
     if model is None or scaler is None or history_buffer is None:
         raise HTTPException(status_code=503, detail="ML Service assets not fully loaded.")
@@ -212,6 +226,9 @@ def predict_raw(payload: PredictRawInput):
         # 4. SHAP Local explanations
         xai_res = explain_prediction_shap(shap_explainer, scaled_projected_input, features_list, payload.current_servers)
         
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        log_prediction_and_resolve_actuals(input_dict, capacity["recommended_servers"], latency_ms)
+
         return {
             "predicted_servers": capacity["predicted_servers"],
             "recommended_servers": capacity["recommended_servers"],
@@ -427,6 +444,85 @@ def optimizer_multi_objective_raw(payload: MultiObjectiveOptimizeRawRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Multi-Objective optimization execution failed: {str(e)}")
+
+
+# =====================================================================
+# MODEL SELF-MONITORING & RETRAINING ROUTERS
+# =====================================================================
+
+@app.get("/model/status")
+def model_status():
+    """Returns active model details, registry metadata, and historical rollback events."""
+    init_registry_and_dirs()
+    try:
+        with open(REGISTRY_PATH, "r") as f:
+            registry = json.load(f)
+        active_ver = registry["active_version"]
+        champion_meta = registry["history"][active_ver]
+        
+        # Calculate model age
+        created_dt = datetime.fromisoformat(champion_meta["created_at"])
+        age_days = (datetime.now() - created_dt).days
+        
+        # Check last retraining
+        retrain_history = [v for k, v in registry["history"].items() if k != "v1"]
+        last_retrained = retrain_history[-1]["created_at"] if retrain_history else "Never"
+        
+        return {
+            "active_version": active_ver,
+            "algorithm": champion_meta["algorithm"],
+            "created_at": champion_meta["created_at"],
+            "age_days": age_days,
+            "last_retrained": last_retrained,
+            "rollback_events": registry.get("rollback_events", []),
+            "champion_model": champion_meta,
+            "challenger_model": {
+                "status": "IDLE",
+                "ready": True
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch model registry: {str(e)}")
+
+@app.get("/model/metrics")
+def model_metrics():
+    """Retrieves rolling prediction errors (MAE, RMSE, R2) based on logged feedback."""
+    return get_performance_metrics()
+
+@app.get("/model/drift")
+def model_drift():
+    """Computes Kolmogorov-Smirnov drift detection for all input features and predictions."""
+    return calculate_drift()
+
+class RetrainRequest(BaseModel):
+    force: bool = False
+    authorized: bool = False
+
+@app.post("/model/retrain")
+def model_retrain(payload: RetrainRequest):
+    """Executes the automated retraining pipeline and reloads models in memory upon promotion."""
+    try:
+        res = trigger_retraining_pipeline(force=payload.force, authorized=payload.authorized)
+        if res.get("success") and res.get("promoted"):
+            # Dynamically reload active assets in memory
+            load_assets()
+            print("Retraining completed and Challenger promoted! Assets reloaded in memory.")
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Retraining failed: {str(e)}")
+
+@app.post("/model/rollback")
+def model_rollback():
+    """Rolls back the active production model to the previous stable version and reloads assets."""
+    try:
+        res = rollback_to_previous_stable()
+        if res.get("success"):
+            load_assets()
+            print("Rollback completed! Previous assets reloaded in memory.")
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Rollback failed: {str(e)}")
+
 
 
 

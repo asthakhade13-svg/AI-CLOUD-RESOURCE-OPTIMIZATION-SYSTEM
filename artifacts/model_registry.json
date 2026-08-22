@@ -1,0 +1,22 @@
+{
+  "active_version": "v1",
+  "history": {
+    "v1": {
+      "version": "v1",
+      "algorithm": "Random Forest",
+      "hyperparameters": {
+        "n_estimators": 100,
+        "random_state": 42
+      },
+      "metrics": {
+        "mae": 0.082,
+        "rmse": 0.125,
+        "r2": 0.94
+      },
+      "created_at": "2026-08-22T14:55:29.543101",
+      "dataset_path": "data/cleaned_workload.csv",
+      "model_path": "artifacts/models\\model_v1.pkl"
+    }
+  },
+  "rollback_events": []
+}

@@ -1,0 +1,1 @@
+timestamp,predicted_at,cpu_usage,memory_usage,network_traffic,active_users,request_rate,response_time,error_rate,predicted_servers,actual_servers,latency_ms

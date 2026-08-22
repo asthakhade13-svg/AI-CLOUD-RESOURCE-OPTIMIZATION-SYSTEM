@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
+from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 import os
@@ -682,6 +683,71 @@ def get_k8s_autoscaling_status():
             "mode": os.getenv("SCALING_MODE", "RECOMMENDATION"),
             "method": os.getenv("SCALING_METHOD", "KEDA")
         }
+
+
+# =====================================================================
+# MODEL SELF-MONITORING & RETRAINING PROXY ROUTERS
+# =====================================================================
+
+@app.get("/model/status")
+def gateway_model_status():
+    """Proxies request to ML Service to retrieve model versioning, age, and status metadata."""
+    try:
+        res = requests.get(f"{ML_SERVICE_URL}/model/status", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
+
+@app.get("/model/metrics")
+def gateway_model_metrics():
+    """Proxies request to ML Service to retrieve active model MAE, RMSE performance stats."""
+    try:
+        res = requests.get(f"{ML_SERVICE_URL}/model/metrics", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
+
+@app.get("/model/drift")
+def gateway_model_drift():
+    """Proxies request to ML Service to retrieve Kolmogorov-Smirnov drift analyses."""
+    try:
+        res = requests.get(f"{ML_SERVICE_URL}/model/drift", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
+
+class GatewayRetrainRequest(BaseModel):
+    force: bool = False
+    authorized: bool = False
+
+@app.post("/model/retrain")
+def gateway_model_retrain(payload: GatewayRetrainRequest):
+    """Proxies request to ML Service to trigger automated validation-gated retraining."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/model/retrain", json=payload.dict(), timeout=60)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+@app.post("/model/rollback")
+def gateway_model_rollback():
+    """Proxies request to ML Service to execute a rollback swap to the previous stable model."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/model/rollback", timeout=10)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
 
 
 
