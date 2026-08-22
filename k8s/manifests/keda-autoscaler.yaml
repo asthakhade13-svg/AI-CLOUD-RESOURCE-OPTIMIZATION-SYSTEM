@@ -1,0 +1,103 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: target-app-keda
+  namespace: default
+  labels:
+    app: target-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: target-app
+  minReplicaCount: 2
+  maxReplicaCount: 10
+  cooldownPeriod: 180      # scale-down cooldown
+  pollingInterval: 30       # check every 30s
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0 # scale up immediately on demand
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+        scaleDown:
+          stabilizationWindowSeconds: 180 # 3min cooldown stabilization to prevent thrashing
+          policies:
+            - type: Percent
+              value: 20
+              periodSeconds: 60
+  fallback:
+    failureThreshold: 3
+    replicas: 5
+  triggers:
+    # 1. Predictive AI trigger querying Gateway Prometheus metrics
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-service:9090
+        metricName: cloud_resource_recommended_servers_count
+        query: sum(cloud_resource_recommended_servers_count)
+        threshold: "1.0"
+        
+    # 2. Reactive CPU protection fallback trigger
+    - type: cpu
+      metadata:
+        value: "80" # scale up if avg CPU utilization > 80%
+        
+    # 3. Reactive Memory protection fallback trigger
+    - type: memory
+      metadata:
+        value: "85" # scale up if avg Memory utilization > 85%
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api-gateway-monitor
+  namespace: default
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: api-gateway
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: target-app-hpa-fallback
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: target-app
+  minReplicas: 2
+  maxReplicas: 10
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 180
+      policies:
+        - type: Percent
+          value: 20
+          periodSeconds: 60
+  metrics:
+    # Scale based on the Prometheus target metric via custom.metrics.k8s.io if KEDA is not present
+    - type: External
+      external:
+        metric:
+          name: cloud_resource_recommended_servers_count
+        target:
+          type: Value
+          value: 1

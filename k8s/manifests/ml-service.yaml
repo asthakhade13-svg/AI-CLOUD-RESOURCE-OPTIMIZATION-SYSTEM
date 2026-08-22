@@ -50,7 +50,8 @@ spec:
   selector:
     app: ml-service
   ports:
-    - protocol: TCP
+    - name: http
+      protocol: TCP
       port: 8050
       targetPort: 8050
   type: ClusterIP

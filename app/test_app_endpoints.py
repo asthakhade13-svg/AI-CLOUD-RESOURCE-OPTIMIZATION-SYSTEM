@@ -128,3 +128,15 @@ def test_root_dashboard_endpoint(client):
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "Cloud Resource Optimization Console" in response.text
+
+def test_k8s_status_endpoint(client):
+    response = client.get("/k8s/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "current_replicas" in data
+    assert "predicted_replicas" in data
+    assert "hpa_keda_status" in data
+    assert "scaling_events" in data
+    assert "mode" in data
+    assert "method" in data
+

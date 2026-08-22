@@ -29,6 +29,10 @@ MAX_SCALE_STEP = int(os.getenv("MAX_SCALE_STEP", "3"))              # Max replic
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))               # Seconds
 SAFE_DEFAULT_REPLICAS = int(os.getenv("SAFE_DEFAULT_REPLICAS", "3"))
 
+SCALING_MODE = os.getenv("SCALING_MODE", "RECOMMENDATION")          # RECOMMENDATION or AUTONOMOUS
+SCALING_METHOD = os.getenv("SCALING_METHOD", "KEDA")                # KEDA, HPA, DIRECT, or NONE
+
+
 # State variables
 last_scale_time = 0.0
 api_failure_count = 0
@@ -180,10 +184,20 @@ def run_autoscaling_tick():
         limited_step = MAX_SCALE_STEP if step > 0 else -MAX_SCALE_STEP
         bounded_replicas = current_replicas + limited_step
         logger.info(f"Scaling step bounded by MAX_SCALE_STEP limit ({MAX_SCALE_STEP}). Adjusting target to: {bounded_replicas}")
-        
-    # 8. Execute Scale Patch
-    apply_replicas_patch(bounded_replicas)
-    last_scale_time = now
+
+    # 8. Execute Scale Action
+    if SCALING_MODE == "AUTONOMOUS":
+        if SCALING_METHOD == "DIRECT":
+            apply_replicas_patch(bounded_replicas)
+            last_scale_time = now
+        elif SCALING_METHOD in ("KEDA", "HPA"):
+            logger.info(f"[AUTONOMOUS KEDA/HPA] Sizing decision {bounded_replicas} replicas is exposed via Prometheus. Scaling delegated to Kubernetes controller.")
+        else:
+            logger.info(f"[AUTONOMOUS] Scaling method '{SCALING_METHOD}' configured. No direct action taken.")
+    else:
+        logger.info(f"[RECOMMENDATION MODE] Sizing calculation: {bounded_replicas} replicas. (Direct patching bypassed).")
+
+
 
 def main():
     logger.info("Initializing Custom AI Autoscaler Controller Loop...")
