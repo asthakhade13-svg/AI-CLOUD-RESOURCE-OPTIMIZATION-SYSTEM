@@ -1,0 +1,13 @@
+{
+  "min_replicas": 2,
+  "max_replicas": 15,
+  "scaling_step_limit": 4,
+  "cooldown_seconds": 60,
+  "budget_limit_hourly": 2.5,
+  "sla_latency_threshold_ms": 250.0,
+  "emergency_restrictions": false,
+  "protected_services": [
+    "Authentication",
+    "Database"
+  ]
+}

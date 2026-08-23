@@ -815,6 +815,147 @@ def gateway_aiops_experiments():
         raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
 
 
+# =====================================================================
+# UNIFIED EXPLAINABILITY, RISK, SAFETY & POLICY PROXY ROUTERS
+# =====================================================================
+
+class GatewayDecisionRequest(BaseModel):
+    current_replicas: int
+    predicted_traffic: float
+    current_cpu: float
+    current_latency: float
+    model_confidence: float = 0.92
+    anomaly_severity: str = "NONE"
+    operator: str = "SYSTEM_AI"
+
+@app.post("/decision")
+def gateway_decision_layer(payload: GatewayDecisionRequest):
+    """Proxies request to ML Service to process safety control decisions."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/decision", json=payload.dict(), timeout=10)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+@app.post("/decision/explain")
+def gateway_decision_explanation(payload: GatewayDecisionRequest):
+    """Proxies request to ML Service to fetch local decision explanations."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/decision/explain", json=payload.dict(), timeout=10)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+class GatewayWhatIfRequest(BaseModel):
+    traffic_increase_pct: float
+    current_replicas: int
+
+@app.post("/decision/simulate")
+def gateway_what_if_simulation(payload: GatewayWhatIfRequest):
+    """Proxies request to ML Service to evaluate What-If scenarios."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/decision/simulate", json=payload.dict(), timeout=10)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+@app.get("/risk")
+def gateway_risk_status():
+    """Proxies request to ML Service to retrieve active calculated risk index metrics."""
+    try:
+        res = requests.get(f"{ML_SERVICE_URL}/risk", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
+
+@app.get("/policies")
+def gateway_safety_policies():
+    """Proxies request to ML Service to fetch active policy thresholds."""
+    try:
+        res = requests.get(f"{ML_SERVICE_URL}/policies", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
+
+class GatewayUpdatePoliciesRequest(BaseModel):
+    min_replicas: int
+    max_replicas: int
+    scaling_step_limit: int
+    cooldown_seconds: int
+    budget_limit_hourly: float
+    sla_latency_threshold_ms: float
+    emergency_restrictions: bool
+
+@app.post("/policies/update")
+def gateway_update_safety_policies(payload: GatewayUpdatePoliciesRequest):
+    """Proxies request to ML Service to update policy thresholds."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/policies/update", json=payload.dict(), timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+@app.get("/audit")
+def gateway_audit_trail():
+    """Proxies request to ML Service to fetch historical safety audit timelines."""
+    try:
+        res = requests.get(f"{ML_SERVICE_URL}/audit", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
+
+@app.post("/emergency-stop")
+def gateway_emergency_stop():
+    """Proxies request to ML Service to trigger emergency halt."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/emergency-stop", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+@app.post("/emergency-start")
+def gateway_emergency_start():
+    """Proxies request to ML Service to release emergency halt."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/emergency-start", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+class GatewaySetModeRequest(BaseModel):
+    mode: str
+
+@app.post("/mode/set")
+def gateway_set_operating_mode(payload: GatewaySetModeRequest):
+    """Proxies request to ML Service to modify operating mode (SIMULATION, APPROVAL, AUTONOMOUS)."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/mode/set", json=payload.dict(), timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+
+
 
 
 
