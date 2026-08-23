@@ -1,0 +1,128 @@
+[
+  {
+    "id": "INC-1787499090",
+    "timestamp": "2026-08-23T21:01:30.117245",
+    "incident": "Database response query latencies exceeded 400ms target.",
+    "root_cause": "Database query plan degradation or locking locks.",
+    "confidence": 0.87,
+    "severity": "MAJOR",
+    "sla_impact_pct": 45.0,
+    "estimated_recovery": "12 min",
+    "affected_services": [
+      "Frontend",
+      "API",
+      "Database"
+    ],
+    "evidence": [
+      "Database latency at 480.0ms",
+      "Downstream API response delayed to 620.0ms"
+    ],
+    "recommended_action": "REDISTRIBUTE_WORKLOAD",
+    "status": "resolved",
+    "resolved_at": "2026-08-23T21:01:30.117986"
+  },
+  {
+    "id": "INC-1787499090",
+    "timestamp": "2026-08-23T21:01:30.114056",
+    "incident": "Elevated error rates detected across authentication handlers.",
+    "root_cause": "Out of Memory (OOM) memory exhaustion on Authentication service.",
+    "confidence": 0.91,
+    "severity": "CRITICAL",
+    "sla_impact_pct": 85.0,
+    "estimated_recovery": "5 min",
+    "affected_services": [
+      "Frontend",
+      "API",
+      "Authentication"
+    ],
+    "evidence": [
+      "Authentication memory at 98.5%",
+      "Error rates rose to 85.0% on Auth node"
+    ],
+    "recommended_action": "RESTART_UNHEALTHY_POD",
+    "status": "active"
+  },
+  {
+    "id": "INC-1787499090",
+    "timestamp": "2026-08-23T21:01:30.110153",
+    "incident": "API latency spike detected above 800ms threshold.",
+    "root_cause": "API CPU Saturation due to workload thread lockups.",
+    "confidence": 0.88,
+    "severity": "CRITICAL",
+    "sla_impact_pct": 85.0,
+    "estimated_recovery": "12 min",
+    "affected_services": [
+      "Frontend",
+      "API"
+    ],
+    "evidence": [
+      "API service CPU usage at 99.8%",
+      "Frontend latency increased to 910.0ms"
+    ],
+    "recommended_action": "SCALE_SERVICE_API",
+    "status": "active"
+  },
+  {
+    "id": "INC-1787499072",
+    "timestamp": "2026-08-23T21:01:12.671659",
+    "incident": "Database response query latencies exceeded 400ms target.",
+    "root_cause": "Database query plan degradation or locking locks.",
+    "confidence": 0.87,
+    "severity": "MAJOR",
+    "sla_impact_pct": 45.0,
+    "estimated_recovery": "12 min",
+    "affected_services": [
+      "Frontend",
+      "API",
+      "Database"
+    ],
+    "evidence": [
+      "Database latency at 480.0ms",
+      "Downstream API response delayed to 620.0ms"
+    ],
+    "recommended_action": "REDISTRIBUTE_WORKLOAD",
+    "status": "resolved",
+    "resolved_at": "2026-08-23T21:01:12.672428"
+  },
+  {
+    "id": "INC-1787499072",
+    "timestamp": "2026-08-23T21:01:12.669088",
+    "incident": "Elevated error rates detected across authentication handlers.",
+    "root_cause": "Out of Memory (OOM) memory exhaustion on Authentication service.",
+    "confidence": 0.91,
+    "severity": "CRITICAL",
+    "sla_impact_pct": 85.0,
+    "estimated_recovery": "5 min",
+    "affected_services": [
+      "Frontend",
+      "API",
+      "Authentication"
+    ],
+    "evidence": [
+      "Authentication memory at 98.5%",
+      "Error rates rose to 85.0% on Auth node"
+    ],
+    "recommended_action": "RESTART_UNHEALTHY_POD",
+    "status": "active"
+  },
+  {
+    "id": "INC-1787499072",
+    "timestamp": "2026-08-23T21:01:12.667008",
+    "incident": "API latency spike detected above 800ms threshold.",
+    "root_cause": "API CPU Saturation due to workload thread lockups.",
+    "confidence": 0.88,
+    "severity": "CRITICAL",
+    "sla_impact_pct": 85.0,
+    "estimated_recovery": "12 min",
+    "affected_services": [
+      "Frontend",
+      "API"
+    ],
+    "evidence": [
+      "API service CPU usage at 99.8%",
+      "Frontend latency increased to 910.0ms"
+    ],
+    "recommended_action": "SCALE_SERVICE_API",
+    "status": "active"
+  }
+]

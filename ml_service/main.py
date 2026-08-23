@@ -43,6 +43,9 @@ from src.model_monitor import (
 )
 
 import time
+from src.aiops_engine import AIOpsEngine
+
+aiops_engine = AIOpsEngine()
 
 
 
@@ -522,6 +525,50 @@ def model_rollback():
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rollback failed: {str(e)}")
+
+
+# =====================================================================
+# AIOPS AND INCIDENT MANAGEMENT ROUTERS
+# =====================================================================
+
+@app.get("/aiops/graph")
+def aiops_graph():
+    """Returns the current state of the Service Dependency Graph nodes."""
+    return {name: node.to_dict() for name, node in aiops_engine.graph.items()}
+
+@app.get("/aiops/incidents")
+def aiops_incidents():
+    """Returns list of active and resolved incidents."""
+    return aiops_engine.active_incidents
+
+class FaultInjectRequest(BaseModel):
+    fault_type: str
+
+@app.post("/aiops/fault_inject")
+def aiops_fault_inject(payload: FaultInjectRequest):
+    """Simulates fault injection on the service graph and returns the logged incident."""
+    try:
+        res = aiops_engine.inject_fault(payload.fault_type)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fault injection failed: {str(e)}")
+
+class ResolveIncidentRequest(BaseModel):
+    incident_id: str
+
+@app.post("/aiops/resolve")
+def aiops_resolve(payload: ResolveIncidentRequest):
+    """Resolves an active incident and restores graph nodes back to healthy status."""
+    success = aiops_engine.resolve_incident(payload.incident_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Incident with ID {payload.incident_id} not found or already resolved.")
+    return {"success": True, "message": f"Incident {payload.incident_id} successfully resolved."}
+
+@app.get("/aiops/experiments")
+def aiops_experiments():
+    """Runs automated experiments comparing HPA, Predictive, and active self-healing AIOps."""
+    return aiops_engine.run_chaos_experiments()
+
 
 
 

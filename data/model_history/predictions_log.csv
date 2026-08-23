@@ -1,1 +1,3 @@
 timestamp,predicted_at,cpu_usage,memory_usage,network_traffic,active_users,request_rate,response_time,error_rate,predicted_servers,actual_servers,latency_ms
+2026-08-22 15:23:22,2026-08-22T15:23:23.802936,45.0,50.0,120.0,180,625.0,120.0,0.0,3.0,,924.8069000022952
+2026-08-22 15:23:48,2026-08-22T15:23:49.268656,45.0,50.0,120.0,180,625.0,120.0,0.0,3.0,,611.2006999901496

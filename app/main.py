@@ -749,6 +749,73 @@ def gateway_model_rollback():
         raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
 
 
+# =====================================================================
+# AIOPS AND INCIDENT MANAGEMENT PROXY ROUTERS
+# =====================================================================
+
+@app.get("/aiops/graph")
+def gateway_aiops_graph():
+    """Proxies request to ML Service to fetch the current Service Dependency Graph state."""
+    try:
+        res = requests.get(f"{ML_SERVICE_URL}/aiops/graph", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
+
+@app.get("/aiops/incidents")
+def gateway_aiops_incidents():
+    """Proxies request to ML Service to fetch logged active and resolved incidents."""
+    try:
+        res = requests.get(f"{ML_SERVICE_URL}/aiops/incidents", timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
+
+class GatewayFaultInjectRequest(BaseModel):
+    fault_type: str
+
+@app.post("/aiops/fault_inject")
+def gateway_aiops_fault_inject(payload: GatewayFaultInjectRequest):
+    """Proxies request to ML Service to inject operational faults in simulation."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/aiops/fault_inject", json=payload.dict(), timeout=10)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+class GatewayResolveIncidentRequest(BaseModel):
+    incident_id: str
+
+@app.post("/aiops/resolve")
+def gateway_aiops_resolve(payload: GatewayResolveIncidentRequest):
+    """Proxies request to ML Service to resolve an active incident."""
+    try:
+        res = requests.post(f"{ML_SERVICE_URL}/aiops/resolve", json=payload.dict(), timeout=10)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+@app.get("/aiops/experiments")
+def gateway_aiops_experiments():
+    """Proxies request to ML Service to fetch comparative chaos experiment reports."""
+    try:
+        res = requests.get(f"{ML_SERVICE_URL}/aiops/experiments", timeout=10)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=res.text)
+        return res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ML Service unreachable: {str(e)}")
+
+
+
 
 
 

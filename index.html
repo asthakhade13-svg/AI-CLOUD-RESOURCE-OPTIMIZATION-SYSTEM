@@ -141,7 +141,13 @@
             const [mlopsLoading, setMlopsLoading] = useState(false);
             const [mlopsRetrainResult, setMlopsRetrainResult] = useState(null);
 
-            
+            // AIOps & Incident Management states
+            const [aiopsGraph, setAiopsGraph] = useState(null);
+            const [aiopsIncidents, setAiopsIncidents] = useState([]);
+            const [aiopsExperiments, setAiopsExperiments] = useState(null);
+            const [aiopsLoading, setAiopsLoading] = useState(false);
+            const [selectedFault, setSelectedFault] = useState('CPU_SATURATION');
+
             // Ref to track charts instances for destruction/re-draw
             const chartsRefs = {
                 cpu: useRef(null),
@@ -517,8 +523,65 @@
                 }
             };
 
+            const fetchAiopsData = async () => {
+                try {
+                    setAiopsLoading(true);
+                    const graphRes = await fetch(`${API_URL}/aiops/graph`);
+                    const incidentsRes = await fetch(`${API_URL}/aiops/incidents`);
+                    const expRes = await fetch(`${API_URL}/aiops/experiments`);
+                    
+                    if (graphRes.ok) setAiopsGraph(await graphRes.json());
+                    if (incidentsRes.ok) setAiopsIncidents(await incidentsRes.json());
+                    if (expRes.ok) setAiopsExperiments(await expRes.json());
+                } catch (e) {
+                    console.warn("Failed to fetch AIOps telemetry:", e);
+                } finally {
+                    setAiopsLoading(false);
+                }
+            };
 
+            const injectFault = async () => {
+                try {
+                    setAiopsLoading(true);
+                    const res = await fetch(`${API_URL}/aiops/fault_inject`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fault_type: selectedFault })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        alert(`Fault successfully injected!\nIncident: ${data.incident}\nRoot Cause: ${data.root_cause}`);
+                        fetchAiopsData();
+                    } else {
+                        alert("Fault injection failed: " + await res.text());
+                    }
+                } catch (e) {
+                    console.error("Fault injection error:", e);
+                } finally {
+                    setAiopsLoading(false);
+                }
+            };
 
+            const resolveIncident = async (incidentId) => {
+                try {
+                    setAiopsLoading(true);
+                    const res = await fetch(`${API_URL}/aiops/resolve`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ incident_id: incidentId })
+                    });
+                    if (res.ok) {
+                        alert("Incident resolved. Service metrics restored to baseline.");
+                        fetchAiopsData();
+                    } else {
+                        alert("Failed to resolve incident: " + await res.text());
+                    }
+                } catch (e) {
+                    console.error("Resolution error:", e);
+                } finally {
+                    setAiopsLoading(false);
+                }
+            };
 
             const handleInputChange = (e) => {
                 const { name, value } = e.target;
@@ -673,6 +736,9 @@
                             </button>
                             <button onClick={() => { setActiveTab('mlops'); fetchMlopsStatus(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'mlops' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
                                 Self-Improving MLOps
+                            </button>
+                            <button onClick={() => { setActiveTab('aiops'); fetchAiopsData(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'aiops' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+                                Incident Center & AIOps
                             </button>
                         </div>
 
@@ -1270,6 +1336,268 @@
                                                     <div>{mlopsRetrainResult.reason}</div>
                                                 </div>
                                             )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'aiops' && (
+                            <div className="space-y-6">
+                                {/* Top Controls & Fault Injector */}
+                                <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+                                    <div className="space-y-1">
+                                        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Intelligent Fault Injector & Twin Simulator</h2>
+                                        <p className="text-xs text-slate-500">Inject operational hazards safely into the Digital Twin to evaluate RCA and self-healing recommendation loops.</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <select value={selectedFault} onChange={(e) => setSelectedFault(e.target.value)} className="bg-slate-950 border border-slate-800 text-xs text-slate-300 rounded px-3 py-2 outline-none">
+                                            <option value="CPU_SATURATION">API CPU Saturation</option>
+                                            <option value="MEMORY_EXHAUSTION">Authentication Memory Exhaustion</option>
+                                            <option value="DATABASE_SLOWDOWN">Database Slow Queries Slowdown</option>
+                                            <option value="SERVICE_OUTAGE">Cache / Storage Service Outage</option>
+                                            <option value="TRAFFIC_SPIKE">Sudden Surge Workload traffic</option>
+                                        </select>
+                                        <button onClick={() => injectFault()} disabled={aiopsLoading} className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded px-4 py-2 transition duration-200">
+                                            Inject Fault Scenario
+                                        </button>
+                                        <button onClick={() => fetchAiopsData()} disabled={aiopsLoading} className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 rounded px-4 py-2 transition duration-200">
+                                            Refresh Graph
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                    {/* Service Dependency Graph Layout */}
+                                    <div className="lg:col-span-2 border border-slate-900 bg-slate-900/10 rounded-xl p-5 space-y-4">
+                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                            Real-Time Service Dependency Graph (Microservices)
+                                        </h3>
+                                        
+                                        <div className="flex flex-col gap-6 py-4">
+                                            {/* Frontend Tier */}
+                                            <div className="flex justify-center">
+                                                {aiopsGraph?.Frontend && (
+                                                    <div className={`w-64 border bg-slate-950 p-4 rounded-xl shadow-lg transition duration-300 ${aiopsGraph.Frontend.health === 'healthy' ? 'border-emerald-500/30 hover:border-emerald-500' : aiopsGraph.Frontend.health === 'degraded' ? 'border-amber-500/50 hover:border-amber-500 animate-pulse' : 'border-rose-500 hover:border-rose-500 animate-bounce'}`}>
+                                                        <div className="flex justify-between items-center border-b border-slate-900 pb-1.5 mb-2">
+                                                            <span className="text-xs font-bold text-slate-200">🖥️ {aiopsGraph.Frontend.name}</span>
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${aiopsGraph.Frontend.health === 'healthy' ? 'bg-emerald-500/10 text-emerald-400' : aiopsGraph.Frontend.health === 'degraded' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                                {aiopsGraph.Frontend.health}
+                                                            </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] font-mono text-slate-400">
+                                                            <div>CPU: {aiopsGraph.Frontend.cpu.toFixed(1)}%</div>
+                                                            <div>Mem: {aiopsGraph.Frontend.memory.toFixed(1)}%</div>
+                                                            <div className="text-amber-400 font-bold">Latency: {aiopsGraph.Frontend.latency.toFixed(1)}ms</div>
+                                                            <div className="text-rose-400">Errors: {aiopsGraph.Frontend.error_rate.toFixed(2)}%</div>
+                                                            <div className="col-span-2 text-slate-500">Traffic: {aiopsGraph.Frontend.traffic.toFixed(0)} rps</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Connector arrow */}
+                                            <div className="text-center text-slate-700 text-xs">▼</div>
+
+                                            {/* API Gateway Tier */}
+                                            <div className="flex justify-center">
+                                                {aiopsGraph?.API && (
+                                                    <div className={`w-64 border bg-slate-950 p-4 rounded-xl shadow-lg transition duration-300 ${aiopsGraph.API.health === 'healthy' ? 'border-emerald-500/30 hover:border-emerald-500' : aiopsGraph.API.health === 'degraded' ? 'border-amber-500/50 hover:border-amber-500 animate-pulse' : 'border-rose-500 hover:border-rose-500 animate-bounce'}`}>
+                                                        <div className="flex justify-between items-center border-b border-slate-900 pb-1.5 mb-2">
+                                                            <span className="text-xs font-bold text-slate-200">🔌 {aiopsGraph.API.name}</span>
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${aiopsGraph.API.health === 'healthy' ? 'bg-emerald-500/10 text-emerald-400' : aiopsGraph.API.health === 'degraded' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                                {aiopsGraph.API.health}
+                                                            </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] font-mono text-slate-400">
+                                                            <div>CPU: {aiopsGraph.API.cpu.toFixed(1)}%</div>
+                                                            <div>Mem: {aiopsGraph.API.memory.toFixed(1)}%</div>
+                                                            <div className="text-amber-400 font-bold">Latency: {aiopsGraph.API.latency.toFixed(1)}ms</div>
+                                                            <div className="text-rose-400">Errors: {aiopsGraph.API.error_rate.toFixed(2)}%</div>
+                                                            <div className="col-span-2 text-slate-500">Traffic: {aiopsGraph.API.traffic.toFixed(0)} rps</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Branched Connector arrows */}
+                                            <div className="flex justify-around px-24 text-slate-700 text-xs">
+                                                <span>↙</span>
+                                                <span>↘</span>
+                                            </div>
+
+                                            {/* Backend Services Tier */}
+                                            <div className="flex justify-around gap-4">
+                                                {aiopsGraph?.Authentication && (
+                                                    <div className={`w-52 border bg-slate-950 p-4 rounded-xl shadow-lg transition duration-300 ${aiopsGraph.Authentication.health === 'healthy' ? 'border-emerald-500/30 hover:border-emerald-500' : aiopsGraph.Authentication.health === 'degraded' ? 'border-amber-500/50 hover:border-amber-500 animate-pulse' : 'border-rose-500 hover:border-rose-500 animate-bounce'}`}>
+                                                        <div className="flex justify-between items-center border-b border-slate-900 pb-1.5 mb-2">
+                                                            <span className="text-[11px] font-bold text-slate-200">🔐 Auth Node</span>
+                                                            <span className={`text-[9px] px-1 py-0.5 rounded font-bold uppercase ${aiopsGraph.Authentication.health === 'healthy' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                                {aiopsGraph.Authentication.health}
+                                                            </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 gap-1 text-[9px] font-mono text-slate-400">
+                                                            <div>CPU: {aiopsGraph.Authentication.cpu.toFixed(1)}% | Mem: {aiopsGraph.Authentication.memory.toFixed(1)}%</div>
+                                                            <div className="text-amber-400">Latency: {aiopsGraph.Authentication.latency.toFixed(1)}ms</div>
+                                                            <div className="text-rose-400 font-bold">Errors: {aiopsGraph.Authentication.error_rate.toFixed(1)}%</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {aiopsGraph?.Database && (
+                                                    <div className={`w-52 border bg-slate-950 p-4 rounded-xl shadow-lg transition duration-300 ${aiopsGraph.Database.health === 'healthy' ? 'border-emerald-500/30 hover:border-emerald-500' : aiopsGraph.Database.health === 'degraded' ? 'border-amber-500/50 hover:border-amber-500 animate-pulse' : 'border-rose-500 hover:border-rose-500 animate-bounce'}`}>
+                                                        <div className="flex justify-between items-center border-b border-slate-900 pb-1.5 mb-2">
+                                                            <span className="text-[11px] font-bold text-slate-200">🗄️ Database</span>
+                                                            <span className={`text-[9px] px-1 py-0.5 rounded font-bold uppercase ${aiopsGraph.Database.health === 'healthy' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                                {aiopsGraph.Database.health}
+                                                            </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 gap-1 text-[9px] font-mono text-slate-400">
+                                                            <div>CPU: {aiopsGraph.Database.cpu.toFixed(1)}% | Mem: {aiopsGraph.Database.memory.toFixed(1)}%</div>
+                                                            <div className="text-amber-400 font-bold">Latency: {aiopsGraph.Database.latency.toFixed(1)}ms</div>
+                                                            <div className="text-rose-400">Errors: {aiopsGraph.Database.error_rate.toFixed(1)}%</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Final Connector Arrow */}
+                                            <div className="flex justify-end pr-36 text-slate-700 text-xs">▼</div>
+
+                                            {/* Cache Tier */}
+                                            <div className="flex justify-end pr-10">
+                                                {aiopsGraph?.["Cache / Storage"] && (
+                                                    <div className={`w-52 border bg-slate-950 p-4 rounded-xl shadow-lg transition duration-300 ${aiopsGraph["Cache / Storage"].health === 'healthy' ? 'border-emerald-500/30 hover:border-emerald-500' : 'border-rose-500 hover:border-rose-500 animate-bounce'}`}>
+                                                        <div className="flex justify-between items-center border-b border-slate-900 pb-1.5 mb-2">
+                                                            <span className="text-[11px] font-bold text-slate-200">💾 Redis Cache</span>
+                                                            <span className={`text-[9px] px-1 py-0.5 rounded font-bold uppercase ${aiopsGraph["Cache / Storage"].health === 'healthy' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                                {aiopsGraph["Cache / Storage"].health}
+                                                            </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 gap-1 text-[9px] font-mono text-slate-400">
+                                                            <div>Mem: {aiopsGraph["Cache / Storage"].memory.toFixed(1)}% | Latency: {aiopsGraph["Cache / Storage"].latency.toFixed(1)}ms</div>
+                                                            <div className="text-rose-400">Errors: {aiopsGraph["Cache / Storage"].error_rate.toFixed(1)}%</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Incident Center & Timeline Feed */}
+                                    <div className="lg:col-span-1 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
+                                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-3 flex items-center gap-2">
+                                            <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-ping"></span>
+                                            Active Incidents Alert Feed
+                                        </h3>
+                                        
+                                        {aiopsIncidents.length === 0 ? (
+                                            <div className="text-center py-12 text-slate-500 text-xs italic">
+                                                No active incidents. Dependency graph operating normally.
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-4 overflow-y-auto max-h-[500px] pr-1">
+                                                {aiopsIncidents.map((inc, i) => (
+                                                    <div key={i} className={`p-4 rounded-xl border space-y-3 ${inc.status === 'active' ? 'bg-rose-950/15 border-rose-900/50' : 'bg-slate-900/15 border-slate-900'}`}>
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="space-y-0.5">
+                                                                <span className="font-mono text-[10px] text-slate-500">{inc.id} | {inc.timestamp.split('T')[1].split('.')[0]}</span>
+                                                                <h4 className="text-xs font-bold text-slate-200 leading-snug">{inc.incident}</h4>
+                                                            </div>
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${inc.severity === 'CRITICAL' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                                                                {inc.severity}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* RCA Details */}
+                                                        <div className="bg-slate-950/65 rounded-lg p-3 text-[11px] space-y-2 border border-slate-900">
+                                                            <div className="flex justify-between">
+                                                                <span className="text-slate-400 font-semibold">🔍 Likely Root Cause:</span>
+                                                                <span className="text-rose-400 font-bold font-mono">{inc.root_cause}</span>
+                                                            </div>
+                                                            <div className="flex justify-between">
+                                                                <span className="text-slate-400">Confidence Score:</span>
+                                                                <span className="text-brand-400 font-mono font-bold">{(inc.confidence * 100).toFixed(0)}%</span>
+                                                            </div>
+                                                            <div className="flex justify-between">
+                                                                <span className="text-slate-400">SLA Impact Risk:</span>
+                                                                <span className="text-rose-400 font-mono">{inc.sla_impact_pct}% SLA Pen.</span>
+                                                            </div>
+                                                            <div className="border-t border-slate-900 pt-1.5 mt-1.5 space-y-1">
+                                                                <div className="text-[10px] text-slate-400 font-bold uppercase">Evidence Log Matches:</div>
+                                                                {inc.evidence.map((ev, k) => (
+                                                                    <div key={k} className="text-[10px] text-slate-500 italic">• {ev}</div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Action & Resolution */}
+                                                        <div className="flex gap-2">
+                                                            {inc.status === 'active' ? (
+                                                                <>
+                                                                    <button onClick={() => resolveIncident(inc.id)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg py-2 transition duration-200">
+                                                                        Auto-Remediate
+                                                                    </button>
+                                                                    <div className="px-2.5 py-2 bg-slate-950 rounded-lg text-[10px] text-amber-400 font-mono border border-slate-900 flex items-center justify-center">
+                                                                        👉 {inc.recommended_action}
+                                                                    </div>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] text-emerald-400 font-bold font-mono flex items-center gap-1">
+                                                                    ✓ Resolved at {inc.resolved_at.split('T')[1].split('.')[0]}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Chaos Experiments Benchmarking Reports */}
+                                <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 space-y-4">
+                                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                        Active Remediation & Chaos Experiments Benchmarks
+                                    </h3>
+                                    
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                        <div className="lg:col-span-2 overflow-x-auto">
+                                            <table className="w-full text-left text-xs border-collapse">
+                                                <thead>
+                                                    <tr className="border-b border-slate-800 text-slate-400 font-bold">
+                                                        <th className="py-2">Policy Layer</th>
+                                                        <th className="py-2">Detection Latency</th>
+                                                        <th className="py-2">RCA Isolation</th>
+                                                        <th className="py-2">Total Recovery Time</th>
+                                                        <th className="py-2 text-center">SLA Violations</th>
+                                                        <th className="py-2 text-center">Cost Index</th>
+                                                        <th className="py-2 text-center">Scaling Events</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {aiopsExperiments?.scenarios.map((sc, index) => (
+                                                        <tr key={index} className="border-b border-slate-900 text-slate-200">
+                                                            <td className="py-3 font-semibold text-brand-400">{sc.policy}</td>
+                                                            <td className="py-3 font-mono">{sc.detection_time_sec.toFixed(1)}s</td>
+                                                            <td className="py-3 font-mono">{sc.root_cause_id_time_sec.toFixed(1)}s</td>
+                                                            <td className="py-3 font-mono text-emerald-400">{sc.recovery_time_sec.toFixed(1)}s</td>
+                                                            <td className="py-3 text-center text-rose-400 font-bold font-mono">{sc.sla_violations}</td>
+                                                            <td className="py-3 text-center font-mono">{sc.cost_multiplier.toFixed(2)}x</td>
+                                                            <td className="py-3 text-center font-mono">{sc.scaling_events}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div className="lg:col-span-1 bg-slate-950/40 border border-slate-900 p-4 rounded-xl space-y-2">
+                                            <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">AIOps Benchmark Takeaways:</h4>
+                                            <div className="space-y-2 text-[10px] text-slate-500 leading-relaxed">
+                                                {aiopsExperiments?.evidence.map((ev, i) => (
+                                                    <p key={i}>• {ev}</p>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
