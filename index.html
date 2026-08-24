@@ -1340,46 +1340,46 @@
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Current config */}
                                         <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950/40 p-5 rounded-xl space-y-4">
-                                            <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">CURRENT</h4>
+                                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">CURRENT</h4>
                                             <div className="space-y-2 text-xs">
                                                 <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
-                                                    <span className="text-slate-400">Servers:</span>
-                                                    <span className="text-slate-200 font-bold">{inputs.current_servers}</span>
+                                                    <span className="text-slate-600 dark:text-slate-400">Servers:</span>
+                                                    <span className="text-slate-800 dark:text-slate-200 font-bold">{inputs.current_servers}</span>
                                                 </div>
                                                 <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
-                                                    <span className="text-slate-400">CPU:</span>
-                                                    <span className="text-slate-200">{inputs.cpu_usage}%</span>
+                                                    <span className="text-slate-600 dark:text-slate-400">CPU:</span>
+                                                    <span className="text-slate-800 dark:text-slate-200">{inputs.cpu_usage}%</span>
                                                 </div>
                                                 <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
-                                                    <span className="text-slate-400">Memory:</span>
-                                                    <span className="text-slate-200">{inputs.memory_usage}%</span>
+                                                    <span className="text-slate-600 dark:text-slate-400">Memory:</span>
+                                                    <span className="text-slate-800 dark:text-slate-200">{inputs.memory_usage}%</span>
                                                 </div>
                                                 <div className="flex justify-between font-mono py-1.5">
-                                                    <span className="text-slate-400">Cost:</span>
-                                                    <span className="text-slate-200">{formatCurrencyVal(inputs.current_servers * 0.12 * 24, selectedCurrency, false)}/day</span>
+                                                    <span className="text-slate-600 dark:text-slate-400">Cost:</span>
+                                                    <span className="text-slate-800 dark:text-slate-200">{formatCurrencyVal(inputs.current_servers * 0.12 * 24, selectedCurrency, false)}/day</span>
                                                 </div>
                                             </div>
                                         </div>
 
                                         {/* Recommended config */}
                                         <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950/40 p-5 rounded-xl space-y-4">
-                                            <h4 className="text-xs font-bold text-brand-400 uppercase tracking-wider">RECOMMENDED</h4>
+                                            <h4 className="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider">RECOMMENDED</h4>
                                             <div className="space-y-2 text-xs">
                                                 <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
-                                                    <span className="text-slate-400">Servers:</span>
-                                                    <span className="text-brand-400 font-bold">{optResult ? optResult.recommended_replicas : (prediction?.recommended_servers || inputs.current_servers)}</span>
+                                                    <span className="text-slate-600 dark:text-slate-400">Servers:</span>
+                                                    <span className="text-brand-600 dark:text-brand-400 font-bold">{optResult ? optResult.recommended_configuration?.replicas : (prediction?.recommended_servers || inputs.current_servers)}</span>
                                                 </div>
                                                 <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
-                                                    <span className="text-slate-400">CPU:</span>
-                                                    <span className="text-slate-200">{optResult ? `${(inputs.cpu_usage * (inputs.current_servers / optResult.recommended_replicas)).toFixed(0)}%` : '71%'}</span>
+                                                    <span className="text-slate-600 dark:text-slate-400">CPU:</span>
+                                                    <span className="text-slate-800 dark:text-slate-200">{optResult ? `${(inputs.cpu_usage * (inputs.current_servers / (optResult.recommended_configuration?.replicas || 1))).toFixed(0)}%` : '71%'}</span>
                                                 </div>
                                                 <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
-                                                    <span className="text-slate-400">Memory:</span>
-                                                    <span className="text-slate-200">{optResult ? `${(inputs.memory_usage * (inputs.current_servers / optResult.recommended_replicas)).toFixed(0)}%` : '68%'}</span>
+                                                    <span className="text-slate-600 dark:text-slate-400">Memory:</span>
+                                                    <span className="text-slate-800 dark:text-slate-200">{optResult ? `${(inputs.memory_usage * (inputs.current_servers / (optResult.recommended_configuration?.replicas || 1))).toFixed(0)}%` : '68%'}</span>
                                                 </div>
                                                 <div className="flex justify-between font-mono py-1.5">
-                                                    <span className="text-slate-400">Cost:</span>
-                                                    <span className="text-slate-200">{formatCurrencyVal(optResult ? optResult.recommended_replicas * 0.12 * 24 : (prediction?.recommended_servers || inputs.current_servers) * 0.12 * 24, selectedCurrency, false)}/day</span>
+                                                    <span className="text-slate-600 dark:text-slate-400">Cost:</span>
+                                                    <span className="text-slate-800 dark:text-slate-200">{formatCurrencyVal(optResult ? (optResult.recommended_configuration?.replicas || 1) * 0.12 * 24 : (prediction?.recommended_servers || inputs.current_servers) * 0.12 * 24, selectedCurrency, false)}/day</span>
                                                 </div>
                                             </div>
                                         </div>
