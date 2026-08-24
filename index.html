@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark h-full bg-slate-950 text-slate-100">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -42,24 +42,73 @@
     <!-- Inter Font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
+        /* ═══════════════════════════════════════════════════════
+           DESIGN TOKENS — light mode (:root) & dark mode (.dark)
+           ═══════════════════════════════════════════════════════ */
+        :root {
+            --bg-base:            #f1f5f9;   /* page background  */
+            --bg-surface:         #ffffff;   /* card surface     */
+            --bg-surface-2:       #f8fafc;   /* nested card      */
+            --bg-surface-3:       #f1f5f9;   /* elevated panel   */
+            --bg-input:           #ffffff;
+            --border:             #e2e8f0;
+            --border-strong:      #cbd5e1;
+            --text-primary:       #0f172a;
+            --text-secondary:     #475569;
+            --text-muted:         #94a3b8;
+            --accent:             #0ea5e9;
+            --scrollbar-track:    #f1f5f9;
+            --scrollbar-thumb:    #cbd5e1;
+            --scrollbar-hover:    #94a3b8;
         }
+        .dark {
+            --bg-base:            #020617;
+            --bg-surface:         rgba(15,23,42,0.5);
+            --bg-surface-2:       rgba(15,23,42,0.4);
+            --bg-surface-3:       rgba(15,23,42,0.6);
+            --bg-input:           #020617;
+            --border:             #1e293b;
+            --border-strong:      #334155;
+            --text-primary:       #f1f5f9;
+            --text-secondary:     #94a3b8;
+            --text-muted:         #64748b;
+            --accent:             #0ea5e9;
+            --scrollbar-track:    #020617;
+            --scrollbar-thumb:    #334155;
+            --scrollbar-hover:    #475569;
+        }
+        body { font-family: 'Inter', sans-serif; }
+
+        /* Smooth theme switch — cheap CSS-only, <150 ms */
+        *, *::before, *::after {
+            transition: background-color 150ms ease,
+                        border-color     120ms ease;
+        }
+
         /* Custom scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track  { background: var(--scrollbar-track); }
+        ::-webkit-scrollbar-thumb  { background: var(--scrollbar-thumb); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
+
+        /* Theme toggle pill button */
+        .theme-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 11px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: var(--bg-surface);
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background-color 150ms ease, border-color 120ms ease, color 120ms ease;
         }
-        ::-webkit-scrollbar-track {
-            background: #020617;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #334155;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #475569;
-        }
+        .theme-btn:hover  { background: var(--bg-surface-3); }
+        .theme-btn:focus  { outline: 2px solid #0ea5e9; outline-offset: 2px; }
     </style>
 </head>
 <body class="h-full">
@@ -80,9 +129,29 @@
     </script>
     <div id="root" class="h-full"></div>
 
+    <!-- Anti-flash theme script (runs before React, prevents wrong-theme flash) -->
+    <script>
+        (function () {
+            var saved = localStorage.getItem('cloudopt-theme');
+            var sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (saved === 'dark' || (!saved && sysDark)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        })();
+    </script>
+
     <!-- React App Script -->
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
+
+        // Read initial theme preference (localStorage > system > light fallback)
+        const getInitialDark = () => {
+            const saved = localStorage.getItem('cloudopt-theme');
+            if (saved) return saved === 'dark';
+            return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        };
 
         // API Endpoint configurations
         const API_URL = window.location.origin && window.location.origin !== "null" && !window.location.origin.startsWith("file://") 
@@ -171,6 +240,33 @@
                 }));
             };
 
+            // ── Theme management ────────────────────────────────────────────
+            const [darkMode, setDarkMode] = useState(getInitialDark);
+
+            const toggleTheme = () => {
+                const next = !darkMode;
+                setDarkMode(next);
+                document.documentElement.classList.toggle('dark', next);
+                localStorage.setItem('cloudopt-theme', next ? 'dark' : 'light');
+                // Re-render ApexCharts with updated theme colours
+                setTimeout(() => renderChartsForTheme(next), 60);
+            };
+
+            // Respect OS-level preference changes if user hasn't picked manually
+            useEffect(() => {
+                const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+                if (!mq) return;
+                const handler = (e) => {
+                    if (!localStorage.getItem('cloudopt-theme')) {
+                        setDarkMode(e.matches);
+                        document.documentElement.classList.toggle('dark', e.matches);
+                        setTimeout(() => renderChartsForTheme(e.matches), 60);
+                    }
+                };
+                mq.addEventListener('change', handler);
+                return () => mq.removeEventListener('change', handler);
+            }, []); // eslint-disable-line
+
             // Ref to track charts instances for destruction/re-draw
             const chartsRefs = {
                 cpu: useRef(null),
@@ -214,10 +310,14 @@
             // 2. Trigger ApexCharts updates whenever history or visibility changes
             useEffect(() => {
                 if (history.length === 0) return;
-                setTimeout(() => {
-                    renderCharts();
-                }, 100);
+                setTimeout(() => { renderCharts(); }, 100);
             }, [history, activeTab, showTechDetails.overview]);
+
+            // 2b. Re-render charts when dark/light theme changes
+            useEffect(() => {
+                if (history.length === 0) return;
+                setTimeout(() => { renderChartsForTheme(darkMode); }, 80);
+            }, [darkMode]); // eslint-disable-line
 
             const checkHealth = async () => {
                 try {
@@ -393,6 +493,11 @@
                 const seriesData = paretoFront.map(c => [parseFloat(c.cost.toFixed(4)), parseFloat(c.latency.toFixed(1))]);
                 const recData = [[parseFloat(estCost.toFixed(4)), parseFloat(estLat.toFixed(1))]];
                 
+                const _isDark  = document.documentElement.classList.contains('dark');
+                const _cMode   = _isDark ? 'dark' : 'light';
+                const _cGrid   = _isDark ? '#1e293b' : '#e2e8f0';
+                const _cLabel  = _isDark ? '#94a3b8' : '#475569';
+                const _cAxis   = _isDark ? '#64748b' : '#94a3b8';
                 const options = {
                     chart: {
                         type: 'scatter',
@@ -400,8 +505,8 @@
                         toolbar: { show: false },
                         background: 'transparent'
                     },
-                    theme: { mode: 'dark' },
-                    grid: { borderColor: '#1e293b', strokeDashArray: 4 },
+                    theme: { mode: _cMode },
+                    grid: { borderColor: _cGrid, strokeDashArray: 4 },
                     series: [
                         { name: 'Pareto Candidate', data: seriesData },
                         { name: 'Recommended Config', data: recData }
@@ -414,15 +519,15 @@
                         shape: ["circle", "square"]
                     },
                     xaxis: {
-                        title: { text: 'Hourly Cost ($)', style: { color: '#94a3b8' } },
-                        labels: { style: { colors: '#64748b' }, formatter: (val) => '$' + parseFloat(val).toFixed(2) }
+                        title: { text: 'Hourly Cost ($)', style: { color: _cLabel } },
+                        labels: { style: { colors: _cAxis }, formatter: (val) => '$' + parseFloat(val).toFixed(2) }
                     },
                     yaxis: {
-                        title: { text: 'Latency (ms)', style: { color: '#94a3b8' } },
-                        labels: { style: { colors: '#64748b' } }
+                        title: { text: 'Latency (ms)', style: { color: _cLabel } },
+                        labels: { style: { colors: _cAxis } }
                     },
                     tooltip: {
-                        theme: 'dark',
+                        theme: _cMode,
                         custom: function({ series, seriesIndex, dataPointIndex, w }) {
                             if (seriesIndex === 1) {
                                 return '<div class="p-3 bg-slate-900 border border-slate-800 text-xs rounded text-slate-100 shadow-lg">' +
@@ -443,7 +548,7 @@
                                 '</div>';
                         }
                     },
-                    legend: { show: true, labels: { colors: '#94a3b8' } }
+                    legend: { show: true, labels: { colors: _cLabel } }
                 };
                 
                 if (chartsInstances.current.pareto) {
@@ -727,9 +832,14 @@
                 }));
             };
 
-            const renderCharts = () => {
+            // renderChartsForTheme — called on mount/history changes and on theme switch
+            const renderChartsForTheme = (isDark) => {
                 const times = history.map(h => h.time);
-                
+                const cMode   = isDark ? 'dark' : 'light';
+                const cGrid   = isDark ? '#1e293b' : '#e2e8f0';
+                const cLabel  = isDark ? '#64748b' : '#94a3b8';
+                const cLegend = isDark ? '#94a3b8' : '#475569';
+
                 // Chart Options template
                 const baseOptions = {
                     chart: {
@@ -739,13 +849,13 @@
                         animations: { enabled: true, easing: 'easeinout', speed: 400 },
                         background: 'transparent'
                     },
-                    theme: { mode: 'dark' },
+                    theme: { mode: cMode },
                     stroke: { curve: 'smooth', width: 2 },
-                    grid: { borderColor: '#1e293b', strokeDashArray: 4 },
-                    xaxis: { categories: times, labels: { style: { colors: '#64748b' } } },
-                    yaxis: { labels: { style: { colors: '#64748b' } } },
-                    tooltip: { theme: 'dark' },
-                    legend: { show: true, position: 'top', horizontalAlign: 'right', labels: { colors: '#94a3b8' } }
+                    grid: { borderColor: cGrid, strokeDashArray: 4 },
+                    xaxis: { categories: times, labels: { style: { colors: cLabel } } },
+                    yaxis: { labels: { style: { colors: cLabel } } },
+                    tooltip: { theme: cMode },
+                    legend: { show: true, position: 'top', horizontalAlign: 'right', labels: { colors: cLegend } }
                 };
 
                 const updateOrCreate = (key, element, options) => {
@@ -823,6 +933,10 @@
                 });
             };
 
+            // Convenience wrapper — reads current DOM class to pick theme
+            const renderCharts = () =>
+                renderChartsForTheme(document.documentElement.classList.contains('dark'));
+
             const getSeverityColor = (sev) => {
                 switch(sev) {
                     case 'CRITICAL': return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
@@ -833,29 +947,37 @@
             };
 
             return (
-                <div className="flex flex-col h-full bg-slate-950">
+                <div className="flex flex-col h-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
                     
                     {/* Header */}
-                    <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-6 py-4 border-b border-slate-900 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
+                    <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-900 bg-white/95 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
                         <div className="flex items-center gap-3">
                             <div className="p-2 bg-brand-500/10 text-brand-500 rounded-lg">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><path d="M17.5 19A3.5 3.5 0 0 0 21 15.5c0-2.79-2.54-4.5-5-4.5-.42-1.89-1.76-3.5-3.5-3.5a4 4 0 0 0-4 4c0 .26.03.52.08.77A4.75 4.75 0 0 0 4 17a3 3 0 0 0 3 3h10.5Z"/></svg>
                             </div>
                             <div>
-                                <h1 className="text-lg font-semibold tracking-tight">Cloud Health + Optimization Assistant</h1>
-                                <p className="text-xs text-slate-400">Automated Cloud Management & Safeties</p>
+                                <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Cloud Health + Optimization Assistant</h1>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Automated Cloud Management & Safeties</p>
                             </div>
                         </div>
                         
                         <div className="flex flex-wrap items-center gap-4 mt-3 sm:mt-0">
                             {/* Connection Indicator */}
-                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-800 bg-slate-900">
+                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900">
                                 <span className={`h-2.5 w-2.5 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
-                                <span className="text-xs font-medium text-slate-300">
+                                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
                                     {connected ? 'System Connected' : 'Offline / Re-connecting'}
                                 </span>
                             </div>
-                            <div className="text-xs text-slate-500 font-mono">v11.0.0</div>
+                            <button
+                                onClick={toggleTheme}
+                                className="theme-btn"
+                                aria-label={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                                title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                            >
+                                {darkMode ? '☀ Light' : '🌙 Dark'}
+                            </button>
+                            <div className="text-xs text-slate-400 dark:text-slate-500 font-mono">v11.0.0</div>
                         </div>
                     </header>
 
@@ -863,48 +985,48 @@
                     <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
                         
                         {/* Tab Switcher */}
-                        <div className="flex flex-wrap items-center justify-between border-b border-slate-900 pb-3 gap-2">
+                        <div className="flex flex-wrap items-center justify-between border-b border-slate-200 dark:border-slate-900 pb-3 gap-2">
                             <div className="flex flex-wrap gap-2">
-                                <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'overview' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+                                <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'overview' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
                                     Overview
                                 </button>
-                                <button onClick={() => { setActiveTab('optimize'); triggerOptimization(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'optimize' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+                                <button onClick={() => { setActiveTab('optimize'); triggerOptimization(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'optimize' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
                                     Optimize
                                 </button>
-                                <button onClick={() => { setActiveTab('predict'); triggerPrediction(inputs); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'predict' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+                                <button onClick={() => { setActiveTab('predict'); triggerPrediction(inputs); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'predict' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
                                     Predict
                                 </button>
-                                <button onClick={() => { setActiveTab('what-if'); runWhatIf(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'what-if' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+                                <button onClick={() => { setActiveTab('what-if'); runWhatIf(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'what-if' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
                                     What-If
                                 </button>
-                                <button onClick={() => { setActiveTab('explain'); fetchSafetyData(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'explain' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'}`}>
+                                <button onClick={() => { setActiveTab('explain'); fetchSafetyData(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'explain' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
                                     Explain
                                 </button>
                             </div>
                             
                             {/* More Actions Dropdown */}
                             <div className="relative group">
-                                <button className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 flex items-center gap-1.5 transition-colors">
+                                <button className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1.5 transition-colors">
                                     More
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
                                 </button>
-                                <div className="absolute right-0 top-full mt-1.5 w-48 bg-slate-950 border border-slate-900 rounded-lg shadow-xl py-1.5 hidden group-hover:block hover:block z-[100] transition-all">
-                                    <button onClick={() => { setActiveTab('monitoring'); setTimeout(() => renderCharts(), 100); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                                <div className="absolute right-0 top-full mt-1.5 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-900 rounded-lg shadow-xl py-1.5 hidden group-hover:block hover:block z-[100] transition-all">
+                                    <button onClick={() => { setActiveTab('monitoring'); setTimeout(() => renderCharts(), 100); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
                                         Monitoring
                                     </button>
-                                    <button onClick={() => { setActiveTab('models'); fetchMlopsStatus(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                                    <button onClick={() => { setActiveTab('models'); fetchMlopsStatus(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
                                         Models & Retraining
                                     </button>
-                                    <button onClick={() => { setActiveTab('kubernetes'); fetchSafetyData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                                    <button onClick={() => { setActiveTab('kubernetes'); fetchSafetyData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
                                         Kubernetes & KEDA
                                     </button>
-                                    <button onClick={() => { setActiveTab('aiops'); fetchAiopsData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                                    <button onClick={() => { setActiveTab('aiops'); fetchAiopsData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
                                         Incident Center & AIOps
                                     </button>
-                                    <button onClick={() => { setActiveTab('experiments'); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                                    <button onClick={() => { setActiveTab('experiments'); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
                                         Chaos Experiments
                                     </button>
-                                    <button onClick={() => { setActiveTab('audit'); fetchSafetyData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                                    <button onClick={() => { setActiveTab('audit'); fetchSafetyData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
                                         Safety Audit Logs
                                     </button>
                                 </div>
@@ -915,35 +1037,35 @@
                             <div className="space-y-6">
                                 {/* Top-level cards */}
                                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-                                    <div className="border border-slate-900 bg-slate-900/20 p-4 rounded-xl space-y-1">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Cloud Status</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
+                                        <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Cloud Status</div>
                                         <div className="flex items-center gap-2">
                                             <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                             <span className="text-sm font-bold text-emerald-400">Healthy</span>
                                         </div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/20 p-4 rounded-xl space-y-1">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Current Servers</div>
-                                        <div className="text-xl font-bold font-mono text-slate-200">{inputs.current_servers}</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
+                                        <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Current Servers</div>
+                                        <div className="text-xl font-bold font-mono text-slate-800 dark:text-slate-200">{inputs.current_servers}</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/20 p-4 rounded-xl space-y-1">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Recommended Servers</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
+                                        <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Recommended Servers</div>
                                         <div className="text-xl font-bold font-mono text-brand-400">{prediction?.recommended_servers || inputs.current_servers}</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/20 p-4 rounded-xl space-y-1">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">CPU Usage</div>
-                                        <div className="text-xl font-bold font-mono text-slate-200">{inputs.cpu_usage}%</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
+                                        <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">CPU Usage</div>
+                                        <div className="text-xl font-bold font-mono text-slate-800 dark:text-slate-200">{inputs.cpu_usage}%</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/20 p-4 rounded-xl space-y-1">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Memory Usage</div>
-                                        <div className="text-xl font-bold font-mono text-slate-200">{inputs.memory_usage}%</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
+                                        <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Memory Usage</div>
+                                        <div className="text-xl font-bold font-mono text-slate-800 dark:text-slate-200">{inputs.memory_usage}%</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/20 p-4 rounded-xl space-y-1">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Estimated Cost</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
+                                        <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Estimated Cost</div>
                                         <div className="text-xl font-bold font-mono text-pink-400">${(inputs.current_servers * 0.12 * 24).toFixed(0)}/day</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/20 p-4 rounded-xl space-y-1">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Risk Level</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
+                                        <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Risk Level</div>
                                         <div className="pt-0.5">
                                             <span className={`px-2 py-0.5 rounded text-[11px] font-bold inline-block ${safetyRisk?.status === 'CRITICAL' || safetyRisk?.status === 'HIGH' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
                                                 {safetyRisk?.status || 'LOW'}
@@ -952,8 +1074,8 @@
                                     </div>
                                 </div>
 
-                                <div className="border border-slate-900 bg-slate-900/10 p-5 rounded-xl space-y-3">
-                                    <h3 className="text-sm font-semibold text-slate-300">How is my cloud doing right now?</h3>
+                                <div className="border border-slate-200 dark:border-slate-900 bg-white/70 dark:bg-slate-900/10 p-5 rounded-xl space-y-3">
+                                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">How is my cloud doing right now?</h3>
                                     <p className="text-xs text-slate-400 leading-relaxed">
                                         The cluster is currently running in a stable condition with <strong>{inputs.current_servers} active servers</strong>. 
                                         Workload demand is within normal thresholds, and the automated AI recommends keeping the capacity at <strong>{prediction?.recommended_servers || inputs.current_servers} servers</strong>.
@@ -962,26 +1084,26 @@
 
                                 {/* Technical Details Toggle */}
                                 <div className="space-y-4">
-                                    <button onClick={() => toggleTechDetails('overview')} className="text-xs font-semibold text-slate-500 hover:text-slate-300 flex items-center gap-1">
+                                    <button onClick={() => toggleTechDetails('overview')} className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
                                         {showTechDetails.overview ? 'Hide Technical Details ▲' : 'Technical Details ▼'}
                                     </button>
                                     
                                     {showTechDetails.overview && (
-                                        <div className="border border-slate-900 bg-slate-950 p-5 rounded-xl space-y-6">
-                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-2">Active Telemetry Charts Streams</h4>
+                                        <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl space-y-6">
+                                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-900 pb-2">Active Telemetry Charts Streams</h4>
                                             
                                             {/* Telemetry charts row */}
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                <div className="bg-slate-900/10 p-4 border border-slate-900 rounded-xl h-64">
-                                                    <div className="text-xs font-semibold text-slate-400 mb-2">CPU Utilization</div>
+                                                <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
+                                                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">CPU Utilization</div>
                                                     <div ref={chartsRefs.cpu} className="h-full"></div>
                                                 </div>
-                                                <div className="bg-slate-900/10 p-4 border border-slate-900 rounded-xl h-64">
-                                                    <div className="text-xs font-semibold text-slate-400 mb-2">Memory Allocation</div>
+                                                <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
+                                                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Memory Allocation</div>
                                                     <div ref={chartsRefs.memory} className="h-full"></div>
                                                 </div>
-                                                <div className="bg-slate-900/10 p-4 border border-slate-900 rounded-xl h-64">
-                                                    <div className="text-xs font-semibold text-slate-400 mb-2">Transaction Load (Active Users)</div>
+                                                <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
+                                                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Transaction Load (Active Users)</div>
                                                     <div ref={chartsRefs.users} className="h-full"></div>
                                                 </div>
                                             </div>
@@ -993,9 +1115,9 @@
 
                         {activeTab === 'optimize' && (
                             <div className="space-y-6">
-                                <div className="border border-slate-900 bg-slate-900/20 p-5 rounded-xl space-y-6">
-                                    <div className="flex items-center justify-between border-b border-slate-900 pb-3">
-                                        <h3 className="text-sm font-semibold text-slate-300">Optimize My Cloud Configuration</h3>
+                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-5 rounded-xl space-y-6">
+                                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-900 pb-3">
+                                        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Optimize My Cloud Configuration</h3>
                                         <button onClick={() => triggerOptimization()} disabled={optLoading} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded transition">
                                             {optLoading ? 'Analyzing Options...' : 'Recalculate Best Configuration'}
                                         </button>
@@ -1003,18 +1125,18 @@
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Current config */}
-                                        <div className="border border-slate-900 bg-slate-950/40 p-5 rounded-xl space-y-4">
-                                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">CURRENT</h4>
+                                        <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950/40 p-5 rounded-xl space-y-4">
+                                            <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">CURRENT</h4>
                                             <div className="space-y-2 text-xs">
-                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-900">
+                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
                                                     <span className="text-slate-400">Servers:</span>
                                                     <span className="text-slate-200 font-bold">{inputs.current_servers}</span>
                                                 </div>
-                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-900">
+                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
                                                     <span className="text-slate-400">CPU:</span>
                                                     <span className="text-slate-200">{inputs.cpu_usage}%</span>
                                                 </div>
-                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-900">
+                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
                                                     <span className="text-slate-400">Memory:</span>
                                                     <span className="text-slate-200">{inputs.memory_usage}%</span>
                                                 </div>
@@ -1026,18 +1148,18 @@
                                         </div>
 
                                         {/* Recommended config */}
-                                        <div className="border border-slate-900 bg-slate-950/40 p-5 rounded-xl space-y-4">
+                                        <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950/40 p-5 rounded-xl space-y-4">
                                             <h4 className="text-xs font-bold text-brand-400 uppercase tracking-wider">RECOMMENDED</h4>
                                             <div className="space-y-2 text-xs">
-                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-900">
+                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
                                                     <span className="text-slate-400">Servers:</span>
                                                     <span className="text-brand-400 font-bold">{optResult ? optResult.recommended_replicas : (prediction?.recommended_servers || inputs.current_servers)}</span>
                                                 </div>
-                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-900">
+                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
                                                     <span className="text-slate-400">CPU:</span>
                                                     <span className="text-slate-200">{optResult ? `${(inputs.cpu_usage * (inputs.current_servers / optResult.recommended_replicas)).toFixed(0)}%` : '71%'}</span>
                                                 </div>
-                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-900">
+                                                <div className="flex justify-between font-mono py-1.5 border-b border-slate-200 dark:border-slate-900">
                                                     <span className="text-slate-400">Memory:</span>
                                                     <span className="text-slate-200">{optResult ? `${(inputs.memory_usage * (inputs.current_servers / optResult.recommended_replicas)).toFixed(0)}%` : '68%'}</span>
                                                 </div>
@@ -1053,13 +1175,13 @@
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
                                         <div className="space-y-2">
                                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">WHY?</h4>
-                                            <p className="text-xs text-slate-500 leading-relaxed italic">
+                                            <p className="text-xs text-slate-500 dark:text-slate-500 leading-relaxed italic">
                                                 {optResult ? optResult.explanation : "Traffic is increasing and the current capacity may become insufficient during peak usage."}
                                             </p>
                                         </div>
                                         <div className="space-y-2">
                                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">EXPECTED RESULT</h4>
-                                            <div className="space-y-1.5 text-xs text-slate-300 font-medium">
+                                            <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300 font-medium">
                                                 <div>✓ Better performance</div>
                                                 <div>✓ Lower overload risk</div>
                                                 <div>✓ SLA maintained</div>
@@ -1068,8 +1190,8 @@
                                     </div>
 
                                     {/* Action Buttons */}
-                                    <div className="flex gap-3 pt-4 border-t border-slate-900">
-                                        <button onClick={() => alert("Simulating action on Digital Twin sandbox...")} className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-semibold px-4 py-2 rounded transition">
+                                    <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-900">
+                                        <button onClick={() => alert("Simulating action on Digital Twin sandbox...")} className="bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-800 text-xs font-semibold px-4 py-2 rounded transition">
                                             Simulate First
                                         </button>
                                         <button onClick={() => alert("Configuration recommendation applied successfully.")} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-4 py-2 rounded transition">
@@ -1080,13 +1202,13 @@
 
                                 {/* Technical Details Toggle */}
                                 <div className="space-y-4">
-                                    <button onClick={() => toggleTechDetails('optimize')} className="text-xs font-semibold text-slate-500 hover:text-slate-300 flex items-center gap-1">
+                                    <button onClick={() => toggleTechDetails('optimize')} className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
                                         {showTechDetails.optimize ? 'Hide Technical Details ▲' : 'Technical Details ▼'}
                                     </button>
                                     
                                     {showTechDetails.optimize && (
-                                        <div className="border border-slate-900 bg-slate-950 p-5 rounded-xl space-y-6">
-                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-2">Multi-Objective Optimization Pareto Curve</h4>
+                                        <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl space-y-6">
+                                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-900 pb-2">Multi-Objective Optimization Pareto Curve</h4>
                                             
                                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                                 <div className="lg:col-span-1 space-y-4">
@@ -1100,7 +1222,7 @@
                                                         ))}
                                                     </div>
                                                 </div>
-                                                <div className="lg:col-span-2 bg-slate-900/10 p-4 border border-slate-900 rounded-xl h-64">
+                                                <div className="lg:col-span-2 bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
                                                     <div ref={chartsRefs.pareto} className="h-full"></div>
                                                 </div>
                                             </div>
@@ -1112,32 +1234,32 @@
 
                         {activeTab === 'predict' && (
                             <div className="space-y-6">
-                                <div className="border border-slate-900 bg-slate-900/20 p-5 rounded-xl space-y-5">
-                                    <h3 className="text-sm font-semibold text-slate-300">How much capacity will I need?</h3>
+                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-5 rounded-xl space-y-5">
+                                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">How much capacity will I need?</h3>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div className="bg-slate-950/40 border border-slate-900 p-4 rounded-xl space-y-1">
-                                            <div className="text-[11px] text-slate-400 uppercase tracking-wider">Next 1 hour</div>
-                                            <div className="text-xl font-bold font-mono text-slate-200">
+                                        <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-900 p-4 rounded-xl space-y-1">
+                                            <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Next 1 hour</div>
+                                            <div className="text-xl font-bold font-mono text-slate-800 dark:text-slate-200">
                                                 {prediction ? prediction.recommended_servers : inputs.current_servers} servers
                                             </div>
                                         </div>
-                                        <div className="bg-slate-950/40 border border-slate-900 p-4 rounded-xl space-y-1">
-                                            <div className="text-[11px] text-slate-400 uppercase tracking-wider">Next 6 hours</div>
-                                            <div className="text-xl font-bold font-mono text-slate-200">
+                                        <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-900 p-4 rounded-xl space-y-1">
+                                            <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Next 6 hours</div>
+                                            <div className="text-xl font-bold font-mono text-slate-800 dark:text-slate-200">
                                                 {prediction ? prediction.recommended_servers + 1 : inputs.current_servers + 1} servers
                                             </div>
                                         </div>
-                                        <div className="bg-slate-950/40 border border-slate-900 p-4 rounded-xl space-y-1">
-                                            <div className="text-[11px] text-slate-400 uppercase tracking-wider">Next 24 hours</div>
-                                            <div className="text-xl font-bold font-mono text-slate-200">
+                                        <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-900 p-4 rounded-xl space-y-1">
+                                            <div className="text-[11px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Next 24 hours</div>
+                                            <div className="text-xl font-bold font-mono text-slate-800 dark:text-slate-200">
                                                 {prediction ? prediction.recommended_servers + 2 : inputs.current_servers + 2} servers
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="bg-slate-950/60 p-4 border border-slate-900 rounded-xl space-y-2 text-xs">
-                                        <p className="text-slate-300 font-medium">
+                                    <div className="bg-slate-50 dark:bg-slate-950/60 p-4 border border-slate-200 dark:border-slate-900 rounded-xl space-y-2 text-xs">
+                                        <p className="text-slate-700 dark:text-slate-300 font-medium">
                                             "Your workload is expected to increase during the next 2 hours."
                                         </p>
                                         <p className="text-slate-400">
@@ -1148,15 +1270,15 @@
 
                                 {/* Technical Details Toggle */}
                                 <div className="space-y-4">
-                                    <button onClick={() => toggleTechDetails('predict')} className="text-xs font-semibold text-slate-500 hover:text-slate-300 flex items-center gap-1">
+                                    <button onClick={() => toggleTechDetails('predict')} className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
                                         {showTechDetails.predict ? 'Hide Technical Details ▲' : 'Technical Details ▼'}
                                     </button>
                                     
                                     {showTechDetails.predict && (
-                                        <div className="border border-slate-900 bg-slate-950 p-5 rounded-xl space-y-6">
-                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-2">Predictive Capacity Timelines</h4>
+                                        <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl space-y-6">
+                                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-900 pb-2">Predictive Capacity Timelines</h4>
                                             
-                                            <div className="bg-slate-900/10 p-4 border border-slate-900 rounded-xl h-64">
+                                            <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
                                                 <div ref={chartsRefs.capacity} className="h-full"></div>
                                             </div>
                                         </div>
@@ -1167,15 +1289,15 @@
 
                         {activeTab === 'what-if' && (
                             <div className="space-y-6">
-                                <div className="border border-slate-900 bg-slate-900/20 p-5 rounded-xl space-y-5">
-                                    <h3 className="text-sm font-semibold text-slate-300">What happens if...?</h3>
+                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-5 rounded-xl space-y-5">
+                                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">What happens if...?</h3>
                                     
                                     <div className="space-y-4">
                                         <div className="space-y-2">
-                                            <div className="text-xs text-slate-400 font-medium">Workload Traffic volume shift:</div>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Workload Traffic volume shift:</div>
                                             <div className="flex gap-2">
                                                 {['-20', '0', '20', '50', '100'].map((pct) => (
-                                                    <button key={pct} onClick={() => { setWhatIfScenario({ traffic_increase_pct: pct }); runWhatIf(); }} className={`px-3 py-1.5 text-xs font-semibold rounded transition ${whatIfScenario.traffic_increase_pct == pct ? 'bg-brand-600 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>
+                                                    <button key={pct} onClick={() => { setWhatIfScenario({ traffic_increase_pct: pct }); runWhatIf(); }} className={`px-3 py-1.5 text-xs font-semibold rounded transition ${whatIfScenario.traffic_increase_pct == pct ? 'bg-brand-600 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
                                                         {pct == '0' ? 'Current' : pct == '100' ? '2×' : pct > 0 ? `+${pct}%` : `${pct}%`}
                                                     </button>
                                                 ))}
@@ -1183,22 +1305,22 @@
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-slate-900">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-slate-200 dark:border-slate-900">
                                         {/* Current */}
-                                        <div className="bg-slate-950/40 p-4 border border-slate-900 rounded-xl space-y-2 text-xs">
-                                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">CURRENT</h4>
+                                        <div className="bg-slate-50 dark:bg-slate-950/40 p-4 border border-slate-200 dark:border-slate-900 rounded-xl space-y-2 text-xs">
+                                            <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">CURRENT</h4>
                                             <div className="font-mono">{inputs.current_servers} servers</div>
                                             <div className="font-mono text-slate-400">${(inputs.current_servers * 0.12 * 24).toFixed(0)}/day</div>
                                         </div>
 
                                         {/* Scenario */}
-                                        <div className="bg-slate-950/40 p-4 border border-slate-900 rounded-xl space-y-2 text-xs">
-                                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">SCENARIO</h4>
+                                        <div className="bg-slate-50 dark:bg-slate-950/40 p-4 border border-slate-200 dark:border-slate-900 rounded-xl space-y-2 text-xs">
+                                            <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">SCENARIO</h4>
                                             <div className="text-brand-400 font-bold">Traffic {whatIfScenario.traffic_increase_pct > 0 ? `+${whatIfScenario.traffic_increase_pct}%` : `${whatIfScenario.traffic_increase_pct}%`}</div>
                                         </div>
 
                                         {/* Result */}
-                                        <div className="bg-slate-950/40 p-4 border border-slate-900 rounded-xl space-y-2 text-xs">
+                                        <div className="bg-slate-50 dark:bg-slate-950/40 p-4 border border-slate-200 dark:border-slate-900 rounded-xl space-y-2 text-xs">
                                             <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">RESULT</h4>
                                             <div className="font-mono font-bold text-slate-200">
                                                 {whatIfResult ? `${whatIfResult.predicted_configuration.replicas} servers recommended` : '8 servers recommended'}
@@ -1213,13 +1335,13 @@
 
                                 {/* Technical Details Toggle */}
                                 <div className="space-y-4">
-                                    <button onClick={() => toggleTechDetails('whatif')} className="text-xs font-semibold text-slate-500 hover:text-slate-300 flex items-center gap-1">
+                                    <button onClick={() => toggleTechDetails('whatif')} className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
                                         {showTechDetails.whatif ? 'Hide Technical Details ▲' : 'Technical Details ▼'}
                                     </button>
                                     
                                     {showTechDetails.whatif && (
-                                        <div className="border border-slate-900 bg-slate-950 p-5 rounded-xl space-y-6">
-                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-2">Digital Twin Simulation Playground</h4>
+                                        <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl space-y-6">
+                                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-900 pb-2">Digital Twin Simulation Playground</h4>
                                             <p className="text-xs text-slate-400 italic">Powered by Digital Twin simulation engines evaluating workload scaling scenarios against resource utilization policies.</p>
                                         </div>
                                     )}
@@ -1229,23 +1351,23 @@
 
                         {activeTab === 'explain' && (
                             <div className="space-y-6">
-                                <div className="border border-slate-900 bg-slate-900/20 p-5 rounded-xl space-y-5">
-                                    <h3 className="text-sm font-semibold text-slate-300">Why we recommend {prediction ? prediction.recommended_servers : (optResult ? optResult.recommended_replicas : 8)} servers?</h3>
+                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-5 rounded-xl space-y-5">
+                                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Why we recommend {prediction ? prediction.recommended_servers : (optResult ? optResult.recommended_replicas : 8)} servers?</h3>
                                     
-                                    <div className="space-y-3.5 text-xs text-slate-300">
+                                    <div className="space-y-3.5 text-xs text-slate-700 dark:text-slate-300">
                                         <div>1. Traffic is increasing based on live forecast telemetry.</div>
                                         <div>2. CPU utilization is currently at {inputs.cpu_usage}% which exceeds threshold limits.</div>
                                         <div>3. Current capacity size ({inputs.current_servers} servers) may cause higher response latency during traffic spikes.</div>
                                         <div>4. Providing {prediction ? prediction.recommended_servers : 8} servers yields a safer capacity safety margin bounds.</div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-900">
+                                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200 dark:border-slate-900">
                                         <div>
-                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold">AI Confidence</div>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">AI Confidence</div>
                                             <div className="text-2xl font-black font-mono text-brand-400">91%</div>
                                         </div>
                                         <div>
-                                            <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Risk Level</div>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Risk Level</div>
                                             <div className="text-2xl font-black font-mono text-emerald-400">{safetyRisk?.status || 'LOW'}</div>
                                         </div>
                                     </div>
@@ -1253,18 +1375,18 @@
 
                                 {/* Technical Details Toggle */}
                                 <div className="space-y-4">
-                                    <button onClick={() => toggleTechDetails('explain')} className="text-xs font-semibold text-slate-500 hover:text-slate-300 flex items-center gap-1">
+                                    <button onClick={() => toggleTechDetails('explain')} className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
                                         {showTechDetails.explain ? 'Hide Technical Details ▲' : 'Technical Details ▼'}
                                     </button>
                                     
                                     {showTechDetails.explain && (
-                                        <div className="border border-slate-900 bg-slate-950 p-5 rounded-xl space-y-6">
-                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-2">Explainable AI Attributions</h4>
+                                        <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl space-y-6">
+                                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-900 pb-2">Explainable AI Attributions</h4>
                                             
                                             {/* Attributions display */}
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="bg-slate-900/10 p-4 border border-slate-900 rounded-xl space-y-2 text-xs">
-                                                    <div className="font-bold text-slate-400">SHAP Local Feature Contributions</div>
+                                                <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl space-y-2 text-xs">
+                                                    <div className="font-bold text-slate-500 dark:text-slate-400">SHAP Local Feature Contributions</div>
                                                     <div className="space-y-2">
                                                         <div className="flex justify-between"><span>Workload Demand:</span><span className="font-mono text-brand-400">+0.45</span></div>
                                                         <div className="flex justify-between"><span>Utilization:</span><span className="font-mono text-brand-400">+0.25</span></div>
@@ -1284,11 +1406,11 @@
                                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                                     
                                     {/* Telemetry Input Panel */}
-                                    <div className="lg:col-span-3 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                                    <div className="lg:col-span-3 border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 rounded-xl p-5 space-y-4">
+                                        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-900 pb-3">
                                             <div className="flex items-center gap-2">
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="2" y1="14" x2="6" y2="14"/><line x1="10" y1="8" x2="14" y2="8"/><line x1="18" y1="16" x2="22" y2="16"/></svg>
-                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Real-Time Telemetry Control</h2>
+                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Real-Time Telemetry Control</h2>
                                             </div>
                                             <div className="flex gap-2">
                                                 <button onClick={() => runSimulation('healthy')} className="px-2.5 py-1 text-xs font-medium bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded">
@@ -1305,32 +1427,32 @@
                                         
                                         <form onSubmit={(e) => { e.preventDefault(); triggerPrediction(inputs); }} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">CPU Usage (%)</label>
-                                                <input type="number" step="0.1" name="cpu_usage" value={inputs.cpu_usage} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">CPU Usage (%)</label>
+                                                <input type="number" step="0.1" name="cpu_usage" value={inputs.cpu_usage} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder-slate-400 dark:placeholder-slate-600" />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">Memory (%)</label>
-                                                <input type="number" step="0.1" name="memory_usage" value={inputs.memory_usage} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Memory (%)</label>
+                                                <input type="number" step="0.1" name="memory_usage" value={inputs.memory_usage} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder-slate-400 dark:placeholder-slate-600" />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">Traffic (Mbps)</label>
-                                                <input type="number" step="0.1" name="network_traffic" value={inputs.network_traffic} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Traffic (Mbps)</label>
+                                                <input type="number" step="0.1" name="network_traffic" value={inputs.network_traffic} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder-slate-400 dark:placeholder-slate-600" />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">Active Users</label>
-                                                <input type="number" name="active_users" value={inputs.active_users} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Active Users</label>
+                                                <input type="number" name="active_users" value={inputs.active_users} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder-slate-400 dark:placeholder-slate-600" />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">Current Servers</label>
-                                                <input type="number" name="current_servers" value={inputs.current_servers} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Current Servers</label>
+                                                <input type="number" name="current_servers" value={inputs.current_servers} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder-slate-400 dark:placeholder-slate-600" />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">Response Time (ms)</label>
-                                                <input type="number" name="response_time" value={inputs.response_time} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Response Time (ms)</label>
+                                                <input type="number" name="response_time" value={inputs.response_time} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder-slate-400 dark:placeholder-slate-600" />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">Error Rate (%)</label>
-                                                <input type="number" step="0.01" name="error_rate" value={inputs.error_rate} onChange={handleInputChange} className="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-100 outline-none" />
+                                                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Error Rate (%)</label>
+                                                <input type="number" step="0.01" name="error_rate" value={inputs.error_rate} onChange={handleInputChange} className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 focus:border-brand-500 rounded-lg px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none placeholder-slate-400 dark:placeholder-slate-600" />
                                             </div>
                                             <div className="flex items-end">
                                                 <button type="submit" disabled={loading} className="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg text-sm px-4 py-2 transition flex items-center justify-center gap-2">
@@ -1342,15 +1464,15 @@
                                     </div>
                                     
                                     {/* Running Decision Metrics */}
-                                    <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4 flex flex-col justify-between">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 rounded-xl p-5 space-y-4 flex flex-col justify-between">
                                         <div>
-                                            <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
+                                            <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-900 pb-3">
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-500"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Scale Orchestrator</h2>
+                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Scale Orchestrator</h2>
                                             </div>
                                             <div className="mt-4 space-y-2">
                                                 <div className="flex justify-between items-center text-xs">
-                                                    <span className="text-slate-400">Scaling Action:</span>
+                                                    <span className="text-slate-500 dark:text-slate-400">Scaling Action:</span>
                                                     <span className={`px-2.5 py-1 rounded text-xs font-bold ${
                                                         prediction?.action === 'SCALE_UP' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
                                                         prediction?.action === 'SCALE_DOWN' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
@@ -1360,7 +1482,7 @@
                                                     </span>
                                                 </div>
                                                 <div className="flex justify-between items-center text-xs">
-                                                    <span className="text-slate-400">SLA Status:</span>
+                                                    <span className="text-slate-500 dark:text-slate-400">SLA Status:</span>
                                                     <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${
                                                         prediction?.sla_status === 'VIOLATED' ? 'bg-rose-500/10 text-rose-400' :
                                                         prediction?.sla_status === 'AT_RISK' ? 'bg-amber-500/10 text-amber-400' :
@@ -1370,14 +1492,14 @@
                                                     </span>
                                                 </div>
                                                 <div className="flex justify-between items-center text-xs">
-                                                    <span className="text-slate-400">Cooldown Lock:</span>
+                                                    <span className="text-slate-500 dark:text-slate-400">Cooldown Lock:</span>
                                                     <span className={`font-mono font-medium ${prediction?.cooldown_active ? 'text-amber-500' : 'text-slate-400'}`}>
                                                         {prediction?.cooldown_active ? 'Locked (Cooldown Active)' : 'Active (Ready)'}
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="text-[10px] text-slate-500 font-mono pt-3 border-t border-slate-900">
+                                        <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono pt-3 border-t border-slate-200 dark:border-slate-900">
                                             Trigger reasons: {prediction?.reason || 'System capacity stable.'}
                                         </div>
                                     </div>
@@ -1393,40 +1515,40 @@
 
                                 {/* Metric Overview Widgets Cards */}
                                 <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-2">
                                         <div className="text-xs text-slate-400">CPU Usage</div>
                                         <div className="text-2xl font-bold font-mono text-brand-500">{inputs.cpu_usage}%</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-2">
                                         <div className="text-xs text-slate-400">Memory Usage</div>
                                         <div className="text-2xl font-bold font-mono text-purple-400">{inputs.memory_usage}%</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-2">
                                         <div className="text-xs text-slate-400">Active Sessions</div>
                                         <div className="text-2xl font-bold font-mono text-emerald-400">{inputs.active_users}</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-2">
                                         <div className="text-xs text-slate-400">Capacity (Current / Target)</div>
                                         <div className="text-2xl font-bold font-mono text-slate-200">
-                                            {inputs.current_servers} <span className="text-xs text-slate-500">/ {prediction?.recommended_servers || inputs.current_servers}</span>
+                                            {inputs.current_servers} <span className="text-xs text-slate-400 dark:text-slate-500">/ {prediction?.recommended_servers || inputs.current_servers}</span>
                                         </div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-2">
                                         <div className="text-xs text-slate-400">Hourly Costs</div>
                                         <div className="text-2xl font-bold font-mono text-pink-400">${prediction?.hourly_cost || '0.00'}/hr</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-2">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-2">
                                         <div className="text-xs text-slate-400">Projected Daily Savings</div>
                                         <div className="text-2xl font-bold font-mono text-emerald-400">${prediction?.estimated_savings || '0.00'}</div>
                                     </div>
                                 </div>
 
                                 {/* Kubernetes Scaling Status Panel */}
-                                <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                    <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 rounded-xl p-5 space-y-4">
+                                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-900 pb-3">
                                         <div className="flex items-center gap-2">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Kubernetes Sizing & Autoscaling</h2>
+                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Kubernetes Sizing & Autoscaling</h2>
                                         </div>
                                         <span className={`px-2 py-0.5 rounded text-xs font-semibold ${k8sStatus?.fallback_active ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
                                             {k8sStatus?.fallback_active ? 'FALLBACK ACTIVE' : k8sStatus?.hpa_keda_status || 'LOADING'}
@@ -1434,34 +1556,34 @@
                                     </div>
                                     
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                        <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
-                                            <div className="text-xs text-slate-500">Current Replicas</div>
-                                            <div className="text-xl font-bold font-mono text-slate-300 mt-1">{k8sStatus?.current_replicas || 0}</div>
+                                        <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-lg border border-slate-200 dark:border-slate-900">
+                                            <div className="text-xs text-slate-400 dark:text-slate-500">Current Replicas</div>
+                                            <div className="text-xl font-bold font-mono text-slate-700 dark:text-slate-300 mt-1">{k8sStatus?.current_replicas || 0}</div>
                                         </div>
-                                        <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
-                                            <div className="text-xs text-slate-500">Desired Replicas</div>
+                                        <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-lg border border-slate-200 dark:border-slate-900">
+                                            <div className="text-xs text-slate-400 dark:text-slate-500">Desired Replicas</div>
                                             <div className="text-xl font-bold font-mono text-emerald-400 mt-1">{k8sStatus?.desired_replicas || 0}</div>
                                         </div>
-                                        <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
-                                            <div className="text-xs text-slate-500">AI Recommendation</div>
+                                        <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-lg border border-slate-200 dark:border-slate-900">
+                                            <div className="text-xs text-slate-400 dark:text-slate-500">AI Recommendation</div>
                                             <div className="text-xl font-bold font-mono text-brand-400 mt-1">{k8sStatus?.ai_recommendation || 0}</div>
                                         </div>
-                                        <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
-                                            <div className="text-xs text-slate-500">Orchestrator Mode</div>
-                                            <div className="text-sm font-bold text-slate-400 mt-1.5 font-mono">{k8sStatus?.mode || 'RECOMMENDATION'} ({k8sStatus?.method || 'KEDA'})</div>
+                                        <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-lg border border-slate-200 dark:border-slate-900">
+                                            <div className="text-xs text-slate-400 dark:text-slate-500">Orchestrator Mode</div>
+                                            <div className="text-sm font-bold text-slate-500 dark:text-slate-400 mt-1.5 font-mono">{k8sStatus?.mode || 'RECOMMENDATION'} ({k8sStatus?.method || 'KEDA'})</div>
                                         </div>
                                     </div>
 
                                     <div className="space-y-2">
-                                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Kubernetes Scaling Events</div>
-                                        <div className="bg-slate-950/50 border border-slate-900 rounded-lg p-3 space-y-2 max-h-32 overflow-y-auto">
+                                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Kubernetes Scaling Events</div>
+                                        <div className="bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-900 rounded-lg p-3 space-y-2 max-h-32 overflow-y-auto">
                                             {k8sStatus?.scaling_events && k8sStatus.scaling_events.map((ev, index) => (
-                                                <div key={index} className="flex justify-between items-start text-xs border-b border-slate-900/60 pb-1.5 last:border-b-0 last:pb-0">
+                                                <div key={index} className="flex justify-between items-start text-xs border-b border-slate-200 dark:border-slate-900/60 pb-1.5 last:border-b-0 last:pb-0">
                                                     <div className="space-y-0.5">
                                                         <span className="font-semibold text-brand-400 font-mono mr-2">[{ev.reason}]</span>
-                                                        <span className="text-slate-300">{ev.message}</span>
+                                                        <span className="text-slate-600 dark:text-slate-300">{ev.message}</span>
                                                     </div>
-                                                    <span className="text-slate-500 text-[10px] font-mono">{ev.time}</span>
+                                                    <span className="text-slate-400 dark:text-slate-500 text-[10px] font-mono">{ev.time}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -1472,12 +1594,12 @@
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                     
                                     {/* SHAP XAI Explainability Panel */}
-                                    <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 rounded-xl p-5 space-y-4">
+                                        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-900 pb-3">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Explainable AI (SHAP Contributions)</h2>
+                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Explainable AI (SHAP Contributions)</h2>
                                         </div>
-                                        <p className="text-xs text-slate-300 italic border-l-2 border-brand-500 pl-3">
+                                        <p className="text-xs text-slate-600 dark:text-slate-300 italic border-l-2 border-brand-500 pl-3">
                                             "{prediction?.shap_explanation || 'No active predictions evaluated.'}"
                                         </p>
                                         <div className="space-y-2.5 pt-2">
@@ -1489,10 +1611,10 @@
                                                             {typeof val === 'number' ? (val >= 0 ? '+' : '') + val.toFixed(4) : '0.0000'}
                                                         </span>
                                                     </div>
-                                                    <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex">
+                                                    <div className="w-full bg-slate-200 dark:bg-slate-950 h-2 rounded-full overflow-hidden flex">
                                                         {typeof val === 'number' && val >= 0 ? (
                                                             <>
-                                                                <div className="w-1/2 bg-slate-950"></div>
+                                                                <div className="w-1/2 bg-slate-200 dark:bg-slate-950"></div>
                                                                 <div className="bg-rose-500 h-2 rounded-r-full" style={{ width: `${Math.min(50, val * 50)}%` }}></div>
                                                             </>
                                                         ) : (
@@ -1500,7 +1622,7 @@
                                                                 <div className="w-1/2 flex justify-end">
                                                                     <div className="bg-emerald-500 h-2 rounded-l-full" style={{ width: `${Math.min(50, Math.abs(typeof val === 'number' ? val : 0.0) * 50)}%` }}></div>
                                                                 </div>
-                                                                <div className="w-1/2 bg-slate-950"></div>
+                                                                <div className="w-1/2 bg-slate-200 dark:bg-slate-950"></div>
                                                             </>
                                                         )}
                                                     </div>
@@ -1510,11 +1632,11 @@
                                     </div>
                                     
                                     {/* Anomaly Detection Panel */}
-                                    <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 rounded-xl p-5 space-y-4">
+                                        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-900 pb-3">
                                             <div className="flex items-center gap-2">
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-purple-500"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">AI Anomaly Status</h2>
+                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">AI Anomaly Status</h2>
                                             </div>
                                             {prediction && (
                                                 <span className={`px-2 py-0.5 rounded text-xs font-semibold ${prediction.is_anomaly ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
@@ -1525,21 +1647,21 @@
                                         {prediction && (
                                             <div className="space-y-4">
                                                 <div className="grid grid-cols-2 gap-4">
-                                                    <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
-                                                        <div className="text-xs text-slate-500">Severity</div>
+                                                    <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-lg border border-slate-200 dark:border-slate-900">
+                                                        <div className="text-xs text-slate-400 dark:text-slate-500">Severity</div>
                                                         <div className={`text-sm font-bold mt-1 ${getSeverityColor(prediction.severity)} inline-block px-2 py-0.5 rounded border`}>
                                                             {prediction.severity}
                                                         </div>
                                                     </div>
-                                                    <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-900">
-                                                        <div className="text-xs text-slate-500">Anomaly Probability Score</div>
+                                                    <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-lg border border-slate-200 dark:border-slate-900">
+                                                        <div className="text-xs text-slate-400 dark:text-slate-500">Anomaly Probability Score</div>
                                                         <div className="text-sm font-bold text-slate-300 mt-1">
                                                             {(prediction.anomaly_score * 100).toFixed(1)}%
                                                         </div>
                                                     </div>
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <div className="text-xs text-slate-500">Affected Metrics</div>
+                                                    <div className="text-xs text-slate-400 dark:text-slate-500">Affected Metrics</div>
                                                     <div className="flex flex-wrap gap-1.5 mt-1">
                                                         {prediction.affected_metrics.length > 0 ? (
                                                             prediction.affected_metrics.map(col => (
@@ -1553,7 +1675,7 @@
                                                     </div>
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <div className="text-xs text-slate-500">Action Recommendation</div>
+                                                    <div className="text-xs text-slate-400 dark:text-slate-500">Action Recommendation</div>
                                                     <p className="text-xs text-slate-300">
                                                         {prediction.recommendation}
                                                     </p>
@@ -1565,28 +1687,28 @@
 
                                 {/* Interactive Charts Timelines Grid */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">CPU Utilization Timeline</h3>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">CPU Utilization Timeline</h3>
                                         <div ref={chartsRefs.cpu} className="h-60"></div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Memory Utilization Timeline</h3>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Memory Utilization Timeline</h3>
                                         <div ref={chartsRefs.memory} className="h-60"></div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Active Users Timeline</h3>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Active Users Timeline</h3>
                                         <div ref={chartsRefs.users} className="h-60"></div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Capacity: Current vs predicted vs Recommended</h3>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Capacity: Current vs predicted vs Recommended</h3>
                                         <div ref={chartsRefs.capacity} className="h-60"></div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Response Time vs SLA Threshold</h3>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Response Time vs SLA Threshold</h3>
                                         <div ref={chartsRefs.response} className="h-60"></div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-72">
-                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Hosting Costs Timeline</h3>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 h-72">
+                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Hosting Costs Timeline</h3>
                                         <div ref={chartsRefs.cost} className="h-60"></div>
                                     </div>
                                 </div>
@@ -1608,9 +1730,9 @@
                                     
                                     {/* Priority Sliders */}
                                     <div className="lg:col-span-2 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
+                                        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-900 pb-3">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><circle cx="12" cy="12" r="3"/><path d="M3 16h18M3 8h18"/></svg>
-                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Configurable Objective Priority Weights</h2>
+                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Configurable Objective Priority Weights</h2>
                                         </div>
                                         
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1641,9 +1763,9 @@
                                     {/* Optimization Decision Summary Card */}
                                     <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 flex flex-col justify-between border-slate-900">
                                         <div>
-                                            <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
+                                            <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-900 pb-3">
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-500"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Optimization Verdict</h2>
+                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Optimization Verdict</h2>
                                             </div>
                                             
                                             {optResult ? (
@@ -1667,7 +1789,7 @@
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between items-center text-xs">
-                                                        <span className="text-slate-400">SLA Status:</span>
+                                                        <span className="text-slate-500 dark:text-slate-400">SLA Status:</span>
                                                         <span className={`px-2 py-0.5 rounded text-xs font-semibold ${optResult.sla_status === 'HEALTHY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
                                                             {optResult.sla_status}
                                                         </span>
@@ -1693,7 +1815,7 @@
                                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                             {/* Pareto Scatter Plot */}
                                             <div className="lg:col-span-1 border border-slate-900 bg-slate-900/10 rounded-xl p-5 h-80">
-                                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Pareto-Front (Latency vs Cost)</h3>
+                                                <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Pareto-Front (Latency vs Cost)</h3>
                                                 <div ref={chartsRefs.pareto} className="h-64"></div>
                                             </div>
                                             
@@ -1715,7 +1837,7 @@
                                                     </thead>
                                                     <tbody>
                                                         {optResult.comparisons.map((c, i) => (
-                                                            <tr key={i} className="border-b border-slate-900 hover:bg-slate-900/10 text-slate-200">
+                                                            <tr key={i} className="border-b border-slate-200 dark:border-slate-900 hover:bg-slate-50 dark:hover:bg-slate-900/10 text-slate-700 dark:text-slate-200">
                                                                 <td className="py-2.5 font-semibold text-brand-400">{c.scenario.replace(' Configuration', '')}</td>
                                                                 <td className="py-2.5 font-mono">{c.replicas}x {c.instance_type} ({c.cpu_alloc}c/{c.mem_alloc}g)</td>
                                                                 <td className="py-2.5">{c.region}</td>
@@ -1738,25 +1860,25 @@
                             <div className="space-y-6">
                                 {/* MLOps Telemetry Cards */}
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-1">
-                                        <div className="text-xs text-slate-500 uppercase tracking-wider">Active Champion Model</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-1">
+                                        <div className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Active Champion Model</div>
                                         <div className="text-xl font-bold font-mono text-emerald-400">{mlopsStatus?.active_version || 'LOADING'}</div>
                                         <div className="text-[10px] text-slate-400 font-mono truncate">{mlopsStatus?.algorithm || 'Loading...'}</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-1">
-                                        <div className="text-xs text-slate-500 uppercase tracking-wider">Model Deployment Age</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-1">
+                                        <div className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Model Deployment Age</div>
                                         <div className="text-xl font-bold font-mono text-slate-300">{mlopsStatus?.age_days !== undefined ? `${mlopsStatus.age_days} Days` : 'LOADING'}</div>
                                         <div className="text-[10px] text-slate-400 font-mono">Created: {mlopsStatus?.created_at ? mlopsStatus.created_at.split('T')[0] : 'Loading...'}</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-1">
-                                        <div className="text-xs text-slate-500 uppercase tracking-wider">Current Rolling MAE</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-1">
+                                        <div className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Current Rolling MAE</div>
                                         <div className="text-xl font-bold font-mono text-pink-400">
                                             {mlopsMetrics?.mae ? mlopsMetrics.mae.toFixed(4) : '0.0000'}
                                         </div>
                                         <div className="text-[10px] text-slate-400 font-mono">Samples: {mlopsMetrics?.samples_evaluated || 0} resolved ticks</div>
                                     </div>
-                                    <div className="border border-slate-900 bg-slate-900/10 p-4 rounded-xl space-y-1">
-                                        <div className="text-xs text-slate-500 uppercase tracking-wider">Data Drift Status</div>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-1">
+                                        <div className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Data Drift Status</div>
                                         <div className={`text-xl font-bold font-mono ${mlopsDrift?.drift_detected ? 'text-rose-400' : 'text-emerald-400'}`}>
                                             {mlopsDrift?.drift_detected ? 'DRIFT DETECTED' : 'STABLE'}
                                         </div>
@@ -1802,7 +1924,7 @@
 
                                         {mlopsStatus?.rollback_events?.length > 0 && (
                                             <div className="space-y-2">
-                                                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rollback Events</div>
+                                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Rollback Events</div>
                                                 <div className="bg-slate-950/50 border border-slate-900 rounded-lg p-3 max-h-32 overflow-y-auto space-y-2">
                                                     {mlopsStatus.rollback_events.map((ev, index) => (
                                                         <div key={index} className="text-[10px] border-b border-slate-900/60 pb-1.5 last:border-b-0 last:pb-0 text-slate-300">
@@ -1881,13 +2003,13 @@
                         {(activeTab === 'aiops' || activeTab === 'experiments') && (
                             <div className="space-y-6">
                                 {/* Top Controls & Fault Injector */}
-                                <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
                                     <div className="space-y-1">
                                         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Intelligent Fault Injector & Twin Simulator</h2>
-                                        <p className="text-xs text-slate-500">Inject operational hazards safely into the Digital Twin to evaluate RCA and self-healing recommendation loops.</p>
+                                        <p className="text-xs text-slate-400 dark:text-slate-500">Inject operational hazards safely into the Digital Twin to evaluate RCA and self-healing recommendation loops.</p>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                        <select value={selectedFault} onChange={(e) => setSelectedFault(e.target.value)} className="bg-slate-950 border border-slate-800 text-xs text-slate-300 rounded px-3 py-2 outline-none">
+                                        <select value={selectedFault} onChange={(e) => setSelectedFault(e.target.value)} className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 rounded px-3 py-2 outline-none">
                                             <option value="CPU_SATURATION">API CPU Saturation</option>
                                             <option value="MEMORY_EXHAUSTION">Authentication Memory Exhaustion</option>
                                             <option value="DATABASE_SLOWDOWN">Database Slow Queries Slowdown</option>
@@ -2093,8 +2215,8 @@
                                 </div>
 
                                 {/* Chaos Experiments Benchmarking Reports */}
-                                <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 space-y-4">
-                                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 space-y-4">
+                                    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                         Active Remediation & Chaos Experiments Benchmarks
                                     </h3>
                                     
@@ -2144,8 +2266,8 @@
                             <div className="space-y-6">
                                 {/* Operating Mode & Emergency Stop controls */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="border border-slate-900 bg-slate-900/20 p-5 rounded-xl space-y-4">
-                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">System Operating Mode</h3>
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-5 rounded-xl space-y-4">
+                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">System Operating Mode</h3>
                                         <div className="flex gap-2">
                                             {['SIMULATION', 'APPROVAL', 'AUTONOMOUS'].map((mode) => (
                                                 <button key={mode} onClick={() => setMode(mode)} className={`flex-1 text-xs py-2 px-3 rounded font-bold transition duration-200 ${safetyAuditLogs[0]?.operator === 'AUTONOMOUS_DAEMON' && mode === 'AUTONOMOUS' ? 'bg-brand-600 text-white border border-brand-500' : 'bg-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}>
@@ -2175,7 +2297,7 @@
                                     </div>
 
                                     <div className="border border-slate-900 bg-slate-900/20 p-5 rounded-xl space-y-2">
-                                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Risk score</h3>
+                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Active Risk score</h3>
                                         <div className="flex items-baseline justify-between">
                                             <span className={`text-2xl font-black font-mono ${safetyRisk?.status === 'CRITICAL' || safetyRisk?.status === 'HIGH' ? 'text-rose-400' : 'text-emerald-400'}`}>
                                                 {safetyRisk?.status || 'LOW'}
@@ -2259,7 +2381,7 @@
                                                 <label className="text-xs text-slate-400">What if transaction workload traffic surges by:</label>
                                                 <div className="flex items-center gap-2">
                                                     <input type="number" value={whatIfScenario.traffic_increase_pct} onChange={(e) => setWhatIfScenario({ traffic_increase_pct: e.target.value })} className="bg-slate-950 border border-slate-800 rounded px-3 py-1.5 w-24 text-slate-200 font-mono text-xs" />
-                                                    <span className="text-xs text-slate-500">% workload volume increase</span>
+                                                    <span className="text-xs text-slate-400 dark:text-slate-500">% workload volume increase</span>
                                                 </div>
                                             </div>
                                             <button onClick={() => runWhatIf()} disabled={safetyLoading} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold py-2 px-4 rounded transition">
@@ -2312,15 +2434,15 @@
                                 </div>
 
                                 {/* Immutable Safety Audit Trail Timeline */}
-                                <div className="border border-slate-900 bg-slate-900/10 rounded-xl p-5 space-y-4">
-                                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 space-y-4">
+                                    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                         Immutable Safety Policy Audit Timeline Feed
                                     </h3>
                                     
-                                    <div className="bg-slate-950/50 rounded-xl border border-slate-900 overflow-hidden">
+                                    <div className="bg-white dark:bg-slate-950/50 rounded-xl border border-slate-200 dark:border-slate-900 overflow-hidden">
                                         <table className="w-full text-left text-xs border-collapse">
                                             <thead>
-                                                <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-900/30">
+                                                <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-900/30">
                                                     <th className="py-2.5 px-4">Timestamp</th>
                                                     <th className="py-2.5 px-4">Model Version</th>
                                                     <th className="py-2.5 px-4 text-center">Calculated Action</th>
@@ -2333,13 +2455,13 @@
                                             <tbody>
                                                 {safetyAuditLogs.length === 0 ? (
                                                     <tr>
-                                                        <td colSpan="7" className="py-8 text-center text-slate-500 italic">No historical audit trails logged.</td>
+                                                        <td colSpan="7" className="py-8 text-center text-slate-400 dark:text-slate-500 italic">No historical audit trails logged.</td>
                                                     </tr>
                                                 ) : (
                                                     safetyAuditLogs.map((log, index) => (
-                                                        <tr key={index} className="border-b border-slate-900 hover:bg-slate-900/10 text-slate-200">
-                                                            <td className="py-3 px-4 font-mono text-slate-500">{log.timestamp.replace('T', ' ').split('.')[0]}</td>
-                                                            <td className="py-3 px-4 font-mono text-slate-400">{log.model_version}</td>
+                                                        <tr key={index} className="border-b border-slate-200 dark:border-slate-900 hover:bg-slate-50 dark:hover:bg-slate-900/10 text-slate-700 dark:text-slate-200">
+                                                            <td className="py-3 px-4 font-mono text-slate-400 dark:text-slate-500">{log.timestamp.replace('T', ' ').split('.')[0]}</td>
+                                                            <td className="py-3 px-4 font-mono text-slate-500 dark:text-slate-400">{log.model_version}</td>
                                                             <td className="py-3 px-4 text-center font-mono font-semibold text-brand-400">{log.action}</td>
                                                             <td className="py-3 px-4 text-center">
                                                                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${log.risk_score === 'CRITICAL' || log.risk_score === 'HIGH' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
@@ -2351,8 +2473,8 @@
                                                                     {log.policy_result}
                                                                 </span>
                                                             </td>
-                                                            <td className="py-3 px-4 text-slate-300 italic max-w-sm truncate" title={log.reason}>{log.reason}</td>
-                                                            <td className="py-3 px-4 font-mono text-[10px] text-slate-400">{log.execution_result}</td>
+                                                            <td className="py-3 px-4 text-slate-600 dark:text-slate-300 italic max-w-sm truncate" title={log.reason}>{log.reason}</td>
+                                                            <td className="py-3 px-4 font-mono text-[10px] text-slate-500 dark:text-slate-400">{log.execution_result}</td>
                                                         </tr>
                                                     ))
                                                 )}
