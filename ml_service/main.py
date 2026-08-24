@@ -45,6 +45,7 @@ from src.model_monitor import (
 import time
 from src.aiops_engine import AIOpsEngine
 from src.safety_layer import SafetyControlLayer
+import src.safety_layer as safety_layer
 
 aiops_engine = AIOpsEngine()
 safety_control = SafetyControlLayer()

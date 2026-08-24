@@ -910,7 +910,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             traffic_increase_pct: parseFloat(whatIfScenario.traffic_increase_pct),
-                            current_replicas: 4
+                            current_replicas: parseInt(inputs.current_servers) || 4
                         })
                     });
                     if (res.ok) {
@@ -1189,8 +1189,22 @@
                                     <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
                                         <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Cloud Status</div>
                                         <div className="flex items-center gap-2">
-                                            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                            <span className="text-sm font-bold text-emerald-400">Healthy</span>
+                                            {prediction?.is_anomaly || prediction?.sla_status === 'VIOLATED' || safetyRisk?.status === 'CRITICAL' ? (
+                                                <>
+                                                    <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                                                    <span className="text-sm font-bold text-rose-400">Critical</span>
+                                                </>
+                                            ) : prediction?.sla_status === 'AT_RISK' || safetyRisk?.status === 'HIGH' || safetyRisk?.status === 'MEDIUM' ? (
+                                                <>
+                                                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                                    <span className="text-sm font-bold text-amber-400">Warning</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                    <span className="text-sm font-bold text-emerald-400">Healthy</span>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
@@ -1263,8 +1277,22 @@
                                 <div className="border border-slate-200 dark:border-slate-900 bg-white/70 dark:bg-slate-900/10 p-5 rounded-xl space-y-3">
                                     <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">How is my cloud doing right now?</h3>
                                     <p className="text-xs text-slate-400 leading-relaxed">
-                                        The cluster is currently running in a stable condition with <strong>{inputs.current_servers} active servers</strong>. 
-                                        Workload demand is within normal thresholds, and the automated AI recommends keeping the capacity at <strong>{prediction?.recommended_servers || inputs.current_servers} servers</strong>.
+                                        {prediction?.is_anomaly ? (
+                                            <span>
+                                                The cluster has detected an <strong>anomaly ({prediction.severity} severity)</strong> affecting <strong>{prediction.affected_metrics?.join(', ') || 'system metrics'}</strong>. 
+                                                The automated AI recommends adjusting capacity to <strong>{prediction.recommended_servers} servers</strong>.
+                                            </span>
+                                        ) : prediction?.sla_status === 'VIOLATED' ? (
+                                            <span>
+                                                The cluster is currently experiencing <strong>SLA Violations</strong> due to high latency or error rates. 
+                                                The automated AI recommends scaling to <strong>{prediction.recommended_servers} servers</strong> to restore performance.
+                                            </span>
+                                        ) : (
+                                            <span>
+                                                The cluster is currently running in a stable condition with <strong>{inputs.current_servers} active servers</strong>. 
+                                                Workload demand is within normal thresholds, and the automated AI recommends keeping the capacity at <strong>{prediction?.recommended_servers || inputs.current_servers} servers</strong>.
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
 
