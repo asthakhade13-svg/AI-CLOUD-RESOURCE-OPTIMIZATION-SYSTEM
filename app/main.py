@@ -39,6 +39,9 @@ from src.sla import evaluate_sla
 # Import Safety Layer for RL Autonomous decisions
 from rl.safety import SafetyValidator
 from rl.actions import action_to_step, idx_to_action
+from app.services.currency import CurrencyService
+
+currency_service = CurrencyService()
 
 app = FastAPI(
     title="AI Cloud Resource Optimization API Gateway",
@@ -953,6 +956,31 @@ def gateway_set_operating_mode(payload: GatewaySetModeRequest):
         return res.json()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"ML Service unreachable/failed: {str(e)}")
+
+@app.get("/rates")
+def gateway_exchange_rates():
+    """Returns USD-based currency exchange data including supported rates, timestamp, and source status."""
+    try:
+        return currency_service.get_exchange_data()
+    except Exception as e:
+        logger.error(f"Error serving exchange rates: {e}")
+        # Severe fallback if service itself crashes
+        return {
+            "rates": {
+                "USD": 1.0,
+                "INR": 84.30,
+                "EUR": 0.92,
+                "GBP": 0.78,
+                "JPY": 154.50,
+                "AUD": 1.52,
+                "CAD": 1.39,
+                "SGD": 1.34
+            },
+            "timestamp": time.time(),
+            "source": "Critical Gateway Fallback",
+            "status": "error"
+        }
+
 
 
 

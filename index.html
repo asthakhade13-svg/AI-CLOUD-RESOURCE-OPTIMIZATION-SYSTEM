@@ -153,6 +153,22 @@
             return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
         };
 
+        const FALLBACK_RATES = {
+            USD: 1.0,
+            INR: 84.30,
+            EUR: 0.92,
+            GBP: 0.78,
+            JPY: 154.50,
+            AUD: 1.52,
+            CAD: 1.39,
+            SGD: 1.34
+        };
+
+        const getInitialCurrency = () => {
+            const saved = localStorage.getItem('cloudopt-currency');
+            return saved || 'INR';
+        };
+
         // API Endpoint configurations
         const API_URL = window.location.origin && window.location.origin !== "null" && !window.location.origin.startsWith("file://") 
             ? window.location.origin 
@@ -243,6 +259,17 @@
             // ── Theme management ────────────────────────────────────────────
             const [darkMode, setDarkMode] = useState(getInitialDark);
 
+            // ── Currency management ─────────────────────────────────────────
+            const [selectedCurrency, setSelectedCurrency] = useState(getInitialCurrency);
+            const [exchangeRates, setExchangeRates] = useState(FALLBACK_RATES);
+            const [exchangeRatesMeta, setExchangeRatesMeta] = useState({
+                source: 'Local Fallback',
+                timestamp: Math.floor(Date.now() / 1000),
+                status: 'fallback'
+            });
+            const [exchangeError, setExchangeError] = useState(null);
+            const [showCostDetails, setShowCostDetails] = useState(false);
+
             const toggleTheme = () => {
                 const next = !darkMode;
                 setDarkMode(next);
@@ -266,6 +293,96 @@
                 mq.addEventListener('change', handler);
                 return () => mq.removeEventListener('change', handler);
             }, []); // eslint-disable-line
+
+            // Fetch live rates from gateway endpoint
+            const fetchRates = async () => {
+                try {
+                    const res = await fetch(`${API_URL}/rates`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        setExchangeRates(data.rates);
+                        setExchangeRatesMeta({
+                            source: data.source,
+                            timestamp: data.timestamp,
+                            status: data.status
+                        });
+                        setExchangeError(null);
+                    } else {
+                        throw new Error("HTTP failure loading exchange rates");
+                    }
+                } catch (e) {
+                    console.warn("Failed fetching live rates:", e);
+                    setExchangeError("Currency conversion temporarily unavailable.");
+                    setExchangeRatesMeta(prev => ({ ...prev, status: 'error' }));
+                }
+            };
+
+            // Periodically load and update rates
+            useEffect(() => {
+                fetchRates();
+                const interval = setInterval(fetchRates, 600000); // 10 minutes refresh
+                return () => clearInterval(interval);
+            }, []);
+
+            const handleCurrencyChange = (curr) => {
+                setSelectedCurrency(curr);
+                localStorage.setItem('cloudopt-currency', curr);
+                // Trigger charts update
+                setTimeout(() => {
+                    renderChartsForTheme(darkMode);
+                    if (optResult) renderParetoChart();
+                }, 50);
+            };
+
+            const getCurrencySymbol = (curr) => {
+                const symbols = {
+                    USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', AUD: 'A$', CAD: 'C$', SGD: 'S$'
+                };
+                return symbols[curr] || '$';
+            };
+
+            const formatCurrencyVal = (amountInUsd, targetCurr = selectedCurrency, isHourly = false) => {
+                const rates = exchangeRates || FALLBACK_RATES;
+                const rate = rates[targetCurr];
+
+                // Error fallback: If rates missing, fall back to USD display
+                if (!rate || rate <= 0 || exchangeRatesMeta.status === 'error') {
+                    return new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: 'USD',
+                        minimumFractionDigits: isHourly ? 4 : 2,
+                        maximumFractionDigits: isHourly ? 4 : 2
+                    }).format(amountInUsd) + ' USD';
+                }
+
+                let amount = amountInUsd * rate;
+                if (amount < 0 && amount > -0.0001) {
+                    amount = 0;
+                }
+
+                let locale = 'en-US';
+                if (targetCurr === 'INR') locale = 'en-IN';
+                else if (targetCurr === 'EUR') locale = 'de-DE';
+                else if (targetCurr === 'GBP') locale = 'en-GB';
+                else if (targetCurr === 'JPY') locale = 'ja-JP';
+                else if (targetCurr === 'AUD') locale = 'en-AUD';
+                else if (targetCurr === 'CAD') locale = 'en-CA';
+                else if (targetCurr === 'SGD') locale = 'en-SG';
+
+                let decimals = 2;
+                if (targetCurr === 'JPY') {
+                    decimals = isHourly ? 2 : 0;
+                } else {
+                    decimals = isHourly ? 4 : 2;
+                }
+
+                return new Intl.NumberFormat(locale, {
+                    style: 'currency',
+                    currency: targetCurr,
+                    minimumFractionDigits: decimals,
+                    maximumFractionDigits: decimals
+                }).format(amount);
+            };
 
             // Ref to track charts instances for destruction/re-draw
             const chartsRefs = {
@@ -490,8 +607,11 @@
                 const estCost = optResult.estimated_cost;
                 const estLat = optResult.estimated_latency;
                 
-                const seriesData = paretoFront.map(c => [parseFloat(c.cost.toFixed(4)), parseFloat(c.latency.toFixed(1))]);
-                const recData = [[parseFloat(estCost.toFixed(4)), parseFloat(estLat.toFixed(1))]];
+                const currencyRate = exchangeRates[selectedCurrency] || FALLBACK_RATES[selectedCurrency] || 1.0;
+                const currencySymbol = getCurrencySymbol(selectedCurrency);
+                
+                const seriesData = paretoFront.map(c => [parseFloat((c.cost * currencyRate).toFixed(4)), parseFloat(c.latency.toFixed(1))]);
+                const recData = [[parseFloat((estCost * currencyRate).toFixed(4)), parseFloat(estLat.toFixed(1))]];
                 
                 const _isDark  = document.documentElement.classList.contains('dark');
                 const _cMode   = _isDark ? 'dark' : 'light';
@@ -533,7 +653,7 @@
                                 return '<div class="p-3 bg-slate-900 border border-slate-800 text-xs rounded text-slate-100 shadow-lg">' +
                                     '<b class="text-emerald-400">Selected Optimal:</b><br/>' +
                                     recommended.replicas + 'x ' + recommended.instance_type + '<br/>' +
-                                    'Cost: $' + estCost.toFixed(4) + '/hr<br/>' +
+                                    'Cost: ' + formatCurrencyVal(estCost, selectedCurrency, true) + '/hr<br/>' +
                                     'Latency: ' + estLat.toFixed(1) + ' ms' +
                                     '</div>';
                             }
@@ -542,7 +662,7 @@
                             return '<div class="p-3 bg-slate-900 border border-slate-800 text-xs rounded text-slate-100 shadow-lg">' +
                                 '<b class="text-brand-400">' + p.replicas + 'x ' + p.instance_type + '</b> (' + p.region + ')<br/>' +
                                 'CPU: ' + p.cpu_alloc + ' cores | Mem: ' + p.mem_alloc + ' GB<br/>' +
-                                'Cost: $' + p.cost.toFixed(4) + '/hr<br/>' +
+                                'Cost: ' + formatCurrencyVal(p.cost, selectedCurrency, true) + '/hr<br/>' +
                                 'Latency: ' + p.latency.toFixed(1) + ' ms<br/>' +
                                 'Carbon: ' + p.carbon.toFixed(1) + ' gCO2/hr' +
                                 '</div>';
@@ -840,6 +960,9 @@
                 const cLabel  = isDark ? '#64748b' : '#94a3b8';
                 const cLegend = isDark ? '#94a3b8' : '#475569';
 
+                const currencyRate = exchangeRates[selectedCurrency] || FALLBACK_RATES[selectedCurrency] || 1.0;
+                const currencySymbol = getCurrencySymbol(selectedCurrency);
+
                 // Chart Options template
                 const baseOptions = {
                     chart: {
@@ -928,8 +1051,15 @@
                 // 6. Cost Sizing Slices
                 updateOrCreate('cost', chartsRefs.cost.current, {
                     ...baseOptions,
-                    series: [{ name: 'Hourly Cost ($)', data: history.map(h => h.cost) }],
-                    colors: ['#ec4899']
+                    series: [{ name: `Hourly Cost (${currencySymbol})`, data: history.map(h => h.cost * currencyRate) }],
+                    colors: ['#ec4899'],
+                    yaxis: {
+                        title: { text: `Cost (${currencySymbol})`, style: { color: cLegend } },
+                        labels: {
+                            style: { colors: cLabel },
+                            formatter: (val) => currencySymbol + parseFloat(val).toFixed(selectedCurrency === 'JPY' ? 0 : 2)
+                        }
+                    }
                 });
             };
 
@@ -963,6 +1093,25 @@
                         
                         <div className="flex flex-wrap items-center gap-4 mt-3 sm:mt-0">
                             {/* Connection Indicator */}
+                            {/* Currency Selector */}
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Currency:</span>
+                                <select 
+                                    value={selectedCurrency}
+                                    onChange={(e) => handleCurrencyChange(e.target.value)}
+                                    className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 rounded px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-brand-500"
+                                >
+                                    <option value="INR">🇮🇳 INR (₹)</option>
+                                    <option value="USD">🇺🇸 USD ($)</option>
+                                    <option value="EUR">🇪🇺 EUR (€)</option>
+                                    <option value="GBP">🇬🇧 GBP (£)</option>
+                                    <option value="JPY">🇯🇵 JPY (¥)</option>
+                                    <option value="AUD">🇦🇺 AUD (A$)</option>
+                                    <option value="CAD">🇨🇦 CAD (C$)</option>
+                                    <option value="SGD">🇸🇬 SGD (S$)</option>
+                                </select>
+                            </div>
+
                             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900">
                                 <span className={`h-2.5 w-2.5 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
                                 <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
@@ -1060,9 +1209,46 @@
                                         <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Memory Usage</div>
                                         <div className="text-xl font-bold font-mono text-slate-800 dark:text-slate-200">{inputs.memory_usage}%</div>
                                     </div>
-                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
+                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1 relative">
                                         <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Estimated Cost</div>
-                                        <div className="text-xl font-bold font-mono text-pink-400">${(inputs.current_servers * 0.12 * 24).toFixed(0)}/day</div>
+                                        <div className="text-xl font-bold font-mono text-pink-400">
+                                            {formatCurrencyVal(inputs.current_servers * 0.12 * 24, selectedCurrency, false)}/day
+                                        </div>
+                                        {selectedCurrency !== 'USD' && (
+                                            <span className="text-[10px] text-slate-400 block font-normal leading-none mt-0.5">
+                                                ≈ {formatCurrencyVal(inputs.current_servers * 0.12 * 24, 'USD', false)}/day
+                                            </span>
+                                        )}
+                                        {prediction?.estimated_savings > 0 && (
+                                            <span className="text-[10px] text-emerald-500 block font-medium mt-0.5 leading-none">
+                                                ↓ {formatCurrencyVal(prediction.estimated_savings, selectedCurrency, false)} potential saving
+                                            </span>
+                                        )}
+                                        {exchangeError && (
+                                            <span className="text-[9px] text-rose-500 block font-normal leading-none mt-0.5">
+                                                {exchangeError}
+                                            </span>
+                                        )}
+                                        
+                                        <button 
+                                            onClick={() => setShowCostDetails(!showCostDetails)}
+                                            className="text-[9px] text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-400 block mt-1 hover:underline text-left font-medium"
+                                        >
+                                            {showCostDetails ? "Hide Details ▲" : "Cost Details ▼"}
+                                        </button>
+                                        
+                                        {showCostDetails && (
+                                            <div className="absolute left-0 right-0 top-full mt-1.5 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl text-[10px] z-[100] space-y-1 text-slate-600 dark:text-slate-300">
+                                                <div className="flex justify-between"><span>Base Cost:</span><span className="font-mono">{formatCurrencyVal(inputs.current_servers * 0.12 * 24, 'USD', false)}/day</span></div>
+                                                <div className="flex justify-between"><span>Target Currency:</span><span className="font-mono">{selectedCurrency}</span></div>
+                                                <div className="flex justify-between"><span>Exchange Rate:</span><span className="font-mono">1 USD = {getCurrencySymbol(selectedCurrency)}{(exchangeRates[selectedCurrency] || FALLBACK_RATES[selectedCurrency] || 1.0).toFixed(4)}</span></div>
+                                                <div className="flex justify-between"><span>Rate Source:</span><span className="font-mono">{exchangeRatesMeta.source}</span></div>
+                                                <div className="flex justify-between"><span>Last Updated:</span><span className="font-mono">{exchangeRatesMeta.timestamp ? new Date(exchangeRatesMeta.timestamp * 1000).toLocaleTimeString() : 'N/A'}</span></div>
+                                                {exchangeRatesMeta.status === 'stale' && <div className="text-amber-500 font-semibold border-t border-slate-200 dark:border-slate-800 pt-1">Using last-known rate</div>}
+                                                {exchangeRatesMeta.status === 'fallback' && <div className="text-amber-500 font-semibold border-t border-slate-200 dark:border-slate-800 pt-1">Using fallback rates</div>}
+                                                {exchangeRatesMeta.status === 'error' && <div className="text-rose-500 font-semibold border-t border-slate-200 dark:border-slate-800 pt-1">Conversion temporarily offline. Showing USD.</div>}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/20 p-4 rounded-xl space-y-1">
                                         <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Risk Level</div>
@@ -1142,7 +1328,7 @@
                                                 </div>
                                                 <div className="flex justify-between font-mono py-1.5">
                                                     <span className="text-slate-400">Cost:</span>
-                                                    <span className="text-slate-200">${(inputs.current_servers * 0.12 * 24).toFixed(0)}/day</span>
+                                                    <span className="text-slate-200">{formatCurrencyVal(inputs.current_servers * 0.12 * 24, selectedCurrency, false)}/day</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -1165,7 +1351,7 @@
                                                 </div>
                                                 <div className="flex justify-between font-mono py-1.5">
                                                     <span className="text-slate-400">Cost:</span>
-                                                    <span className="text-slate-200">${(optResult ? optResult.recommended_replicas * 0.12 * 24 : (prediction?.recommended_servers || inputs.current_servers) * 0.12 * 24).toFixed(0)}/day</span>
+                                                    <span className="text-slate-200">{formatCurrencyVal(optResult ? optResult.recommended_replicas * 0.12 * 24 : (prediction?.recommended_servers || inputs.current_servers) * 0.12 * 24, selectedCurrency, false)}/day</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -1310,7 +1496,14 @@
                                         <div className="bg-slate-50 dark:bg-slate-950/40 p-4 border border-slate-200 dark:border-slate-900 rounded-xl space-y-2 text-xs">
                                             <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">CURRENT</h4>
                                             <div className="font-mono">{inputs.current_servers} servers</div>
-                                            <div className="font-mono text-slate-400">${(inputs.current_servers * 0.12 * 24).toFixed(0)}/day</div>
+                                            <div className="font-mono text-slate-400">
+                                                {formatCurrencyVal(inputs.current_servers * 0.12 * 24, selectedCurrency, false)}/day
+                                                {selectedCurrency !== 'USD' && (
+                                                    <span className="text-[10px] text-slate-500 block font-normal mt-0.5">
+                                                        ≈ {formatCurrencyVal(inputs.current_servers * 0.12 * 24, 'USD', false)}/day
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
 
                                         {/* Scenario */}
@@ -1326,7 +1519,12 @@
                                                 {whatIfResult ? `${whatIfResult.predicted_configuration.replicas} servers recommended` : '8 servers recommended'}
                                             </div>
                                             <div className="font-mono text-slate-400">
-                                                Cost: ${whatIfResult ? (whatIfResult.predicted_configuration.replicas * 0.12 * 24).toFixed(0) : 61}/day
+                                                Cost: {formatCurrencyVal(whatIfResult ? (whatIfResult.predicted_configuration.replicas * 0.12 * 24) : 61, selectedCurrency, false)}/day
+                                                {selectedCurrency !== 'USD' && (
+                                                    <span className="text-[10px] text-slate-500 block font-normal mt-0.5">
+                                                        ≈ {formatCurrencyVal(whatIfResult ? (whatIfResult.predicted_configuration.replicas * 0.12 * 24) : 61, 'USD', false)}/day
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="text-emerald-400 font-bold">SLA: Safe</div>
                                         </div>
@@ -1535,11 +1733,25 @@
                                     </div>
                                     <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-2">
                                         <div className="text-xs text-slate-400">Hourly Costs</div>
-                                        <div className="text-2xl font-bold font-mono text-pink-400">${prediction?.hourly_cost || '0.00'}/hr</div>
+                                        <div className="text-2xl font-bold font-mono text-pink-400">
+                                            {formatCurrencyVal(prediction?.hourly_cost || 0, selectedCurrency, true)}/hr
+                                        </div>
+                                        {selectedCurrency !== 'USD' && (
+                                            <span className="text-[10px] text-slate-400 block font-normal">
+                                                ≈ {formatCurrencyVal(prediction?.hourly_cost || 0, 'USD', true)}/hr
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-2">
                                         <div className="text-xs text-slate-400">Projected Daily Savings</div>
-                                        <div className="text-2xl font-bold font-mono text-emerald-400">${prediction?.estimated_savings || '0.00'}</div>
+                                        <div className="text-2xl font-bold font-mono text-emerald-400">
+                                            {formatCurrencyVal(prediction?.estimated_savings || 0, selectedCurrency, false)}
+                                        </div>
+                                        {selectedCurrency !== 'USD' && (
+                                            <span className="text-[10px] text-slate-400 block font-normal">
+                                                ≈ {formatCurrencyVal(prediction?.estimated_savings || 0, 'USD', false)}/day
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
 
@@ -2403,7 +2615,12 @@
                                                     <div className="flex justify-between py-1.5 border-b border-slate-900/60">
                                                         <span className="text-slate-400">Hourly Cost Difference:</span>
                                                         <span className={`font-mono font-bold ${whatIfResult.cost_difference >= 0 ? 'text-pink-400' : 'text-emerald-400'}`}>
-                                                            ${whatIfResult.cost_difference.toFixed(4)}/hr
+                                                            {whatIfResult.cost_difference >= 0 ? '+' : ''}{formatCurrencyVal(whatIfResult.cost_difference, selectedCurrency, true)}/hr
+                                                            {selectedCurrency !== 'USD' && (
+                                                                <span className="text-[10px] text-slate-500 block font-normal">
+                                                                    ≈ {whatIfResult.cost_difference >= 0 ? '+' : ''}{formatCurrencyVal(whatIfResult.cost_difference, 'USD', true)}/hr
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between py-1.5">
