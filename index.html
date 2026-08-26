@@ -443,7 +443,7 @@
             useEffect(() => {
                 if (history.length === 0) return;
                 setTimeout(() => { renderCharts(); }, 100);
-            }, [history, activeTab, showTechDetails.overview]);
+            }, [history, activeTab, showTechDetails.overview, showTechDetails.predict]);
 
             // 2b. Re-render charts when dark/light theme changes
             useEffect(() => {
