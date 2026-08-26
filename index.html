@@ -256,6 +256,21 @@
                 }));
             };
 
+            // View Mode State
+            const [isAdvanced, setIsAdvanced] = useState(() => {
+                const saved = localStorage.getItem('cloudopt-view-mode');
+                return saved === 'advanced';
+            });
+
+            const toggleViewMode = () => {
+                const next = !isAdvanced;
+                setIsAdvanced(next);
+                localStorage.setItem('cloudopt-view-mode', next ? 'advanced' : 'simple');
+                if (!next && ['predict', 'what-if', 'explain', 'monitoring', 'models', 'kubernetes', 'aiops', 'experiments', 'audit'].includes(activeTab)) {
+                    setActiveTab('overview');
+                }
+            };
+
             // ── Theme management ────────────────────────────────────────────
             const [darkMode, setDarkMode] = useState(getInitialDark);
 
@@ -1119,6 +1134,13 @@
                                 </span>
                             </div>
                             <button
+                                onClick={toggleViewMode}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs font-semibold transition"
+                                title={isAdvanced ? 'Switch to Simple View (hides advanced panels)' : 'Switch to Advanced View (shows advanced panels)'}
+                            >
+                                {isAdvanced ? '⚙️ Advanced View' : '👤 Simple View'}
+                            </button>
+                            <button
                                 onClick={toggleTheme}
                                 className="theme-btn"
                                 aria-label={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -1142,44 +1164,50 @@
                                 <button onClick={() => { setActiveTab('optimize'); triggerOptimization(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'optimize' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
                                     Optimize
                                 </button>
-                                <button onClick={() => { setActiveTab('predict'); triggerPrediction(inputs); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'predict' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
-                                    Predict
-                                </button>
-                                <button onClick={() => { setActiveTab('what-if'); runWhatIf(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'what-if' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
-                                    What-If
-                                </button>
-                                <button onClick={() => { setActiveTab('explain'); fetchSafetyData(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'explain' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
-                                    Explain
-                                </button>
+                                {isAdvanced && (
+                                    <>
+                                        <button onClick={() => { setActiveTab('predict'); triggerPrediction(inputs); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'predict' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
+                                            Predict
+                                        </button>
+                                        <button onClick={() => { setActiveTab('what-if'); runWhatIf(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'what-if' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
+                                            What-If
+                                        </button>
+                                        <button onClick={() => { setActiveTab('explain'); fetchSafetyData(); }} className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors duration-200 ${activeTab === 'explain' ? 'bg-brand-600 text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/30'}`}>
+                                            Explain
+                                        </button>
+                                    </>
+                                )}
                             </div>
                             
                             {/* More Actions Dropdown */}
-                            <div className="relative group">
-                                <button className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1.5 transition-colors">
-                                    More
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
-                                </button>
-                                <div className="absolute right-0 top-full mt-1.5 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-900 rounded-lg shadow-xl py-1.5 hidden group-hover:block hover:block z-[100] transition-all">
-                                    <button onClick={() => { setActiveTab('monitoring'); setTimeout(() => renderCharts(), 100); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
-                                        Monitoring
+                            {isAdvanced && (
+                                <div className="relative group">
+                                    <button className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1.5 transition-colors">
+                                        More
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
                                     </button>
-                                    <button onClick={() => { setActiveTab('models'); fetchMlopsStatus(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
-                                        Models & Retraining
-                                    </button>
-                                    <button onClick={() => { setActiveTab('kubernetes'); fetchSafetyData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
-                                        Kubernetes & KEDA
-                                    </button>
-                                    <button onClick={() => { setActiveTab('aiops'); fetchAiopsData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
-                                        Incident Center & AIOps
-                                    </button>
-                                    <button onClick={() => { setActiveTab('experiments'); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
-                                        Chaos Experiments
-                                    </button>
-                                    <button onClick={() => { setActiveTab('audit'); fetchSafetyData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
-                                        Safety Audit Logs
-                                    </button>
+                                    <div className="absolute right-0 top-full mt-1.5 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-900 rounded-lg shadow-xl py-1.5 hidden group-hover:block hover:block z-[100] transition-all">
+                                        <button onClick={() => { setActiveTab('monitoring'); setTimeout(() => renderCharts(), 100); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
+                                            Monitoring
+                                        </button>
+                                        <button onClick={() => { setActiveTab('models'); fetchMlopsStatus(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
+                                            Models & Retraining
+                                        </button>
+                                        <button onClick={() => { setActiveTab('kubernetes'); fetchSafetyData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
+                                            Kubernetes & KEDA
+                                        </button>
+                                        <button onClick={() => { setActiveTab('aiops'); fetchAiopsData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
+                                            Incident Center & AIOps
+                                        </button>
+                                        <button onClick={() => { setActiveTab('experiments'); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
+                                            Chaos Experiments
+                                        </button>
+                                        <button onClick={() => { setActiveTab('audit'); fetchSafetyData(); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50">
+                                            Safety Audit Logs
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
 
                         {activeTab === 'overview' && (
@@ -1297,33 +1325,35 @@
                                 </div>
 
                                 {/* Technical Details Toggle */}
-                                <div className="space-y-4">
-                                    <button onClick={() => toggleTechDetails('overview')} className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
-                                        {showTechDetails.overview ? 'Hide Technical Details ▲' : 'Technical Details ▼'}
-                                    </button>
-                                    
-                                    {showTechDetails.overview && (
-                                        <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl space-y-6">
-                                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-900 pb-2">Active Telemetry Charts Streams</h4>
-                                            
-                                            {/* Telemetry charts row */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
-                                                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">CPU Utilization</div>
-                                                    <div ref={chartsRefs.cpu} className="h-full"></div>
-                                                </div>
-                                                <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
-                                                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Memory Allocation</div>
-                                                    <div ref={chartsRefs.memory} className="h-full"></div>
-                                                </div>
-                                                <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
-                                                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Transaction Load (Active Users)</div>
-                                                    <div ref={chartsRefs.users} className="h-full"></div>
+                                {isAdvanced && (
+                                    <div className="space-y-4">
+                                        <button onClick={() => toggleTechDetails('overview')} className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
+                                            {showTechDetails.overview ? 'Hide Technical Details ▲' : 'Technical Details ▼'}
+                                        </button>
+                                        
+                                        {showTechDetails.overview && (
+                                            <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl space-y-6">
+                                                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-900 pb-2">Active Telemetry Charts Streams</h4>
+                                                
+                                                {/* Telemetry charts row */}
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                    <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
+                                                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">CPU Utilization</div>
+                                                        <div ref={chartsRefs.cpu} className="h-full"></div>
+                                                    </div>
+                                                    <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
+                                                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Memory Allocation</div>
+                                                        <div ref={chartsRefs.memory} className="h-full"></div>
+                                                    </div>
+                                                    <div className="bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
+                                                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Transaction Load (Active Users)</div>
+                                                        <div ref={chartsRefs.users} className="h-full"></div>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    )}
-                                </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -1415,34 +1445,37 @@
                                 </div>
 
                                 {/* Technical Details Toggle */}
-                                <div className="space-y-4">
-                                    <button onClick={() => toggleTechDetails('optimize')} className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
-                                        {showTechDetails.optimize ? 'Hide Technical Details ▲' : 'Technical Details ▼'}
-                                    </button>
-                                    
-                                    {showTechDetails.optimize && (
-                                        <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl space-y-6">
-                                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-900 pb-2">Multi-Objective Optimization Pareto Curve</h4>
-                                            
-                                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                                <div className="lg:col-span-1 space-y-4">
-                                                    <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Configure Optimization Weights</h5>
-                                                    <div className="space-y-2 text-xs">
-                                                        {Object.keys(optWeights).map((wKey) => (
-                                                            <div key={wKey} className="flex justify-between items-center">
-                                                                <span className="text-slate-400 capitalize">{wKey}:</span>
-                                                                <input type="range" min="0" max="2" step="0.1" value={optWeights[wKey]} onChange={(e) => setOptWeights(prev => ({ ...prev, [wKey]: parseFloat(e.target.value) }))} className="w-24 accent-brand-500" />
-                                                            </div>
-                                                        ))}
+                                {isAdvanced && (
+                                    <div className="space-y-4">
+                                        <button onClick={() => toggleTechDetails('optimize')} className="text-xs font-semibold text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1">
+                                            {showTechDetails.optimize ? 'Hide Technical Details ▲' : 'Technical Details ▼'}
+                                        </button>
+                                        
+                                        {showTechDetails.optimize && (
+                                            <div className="border border-slate-200 dark:border-slate-900 bg-slate-50 dark:bg-slate-950 p-5 rounded-xl space-y-6">
+                                                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-900 pb-2">Multi-Objective Optimization Pareto Curve</h4>
+                                                
+                                                {/* Pareto front plot */}
+                                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                                    <div className="lg:col-span-1 space-y-4">
+                                                        <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Configure Optimization Weights</h5>
+                                                        <div className="space-y-2 text-xs">
+                                                            {Object.keys(optWeights).map((wKey) => (
+                                                                <div key={wKey} className="flex justify-between items-center">
+                                                                    <span className="text-slate-400 capitalize">{wKey}:</span>
+                                                                    <input type="range" min="0" max="2" step="0.1" value={optWeights[wKey]} onChange={(e) => setOptWeights(prev => ({ ...prev, [wKey]: parseFloat(e.target.value) }))} className="w-24 accent-brand-500" />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="lg:col-span-2 bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
+                                                        <div ref={chartsRefs.pareto} className="h-full"></div>
                                                     </div>
                                                 </div>
-                                                <div className="lg:col-span-2 bg-white dark:bg-slate-900/10 p-4 border border-slate-200 dark:border-slate-900 rounded-xl h-64">
-                                                    <div ref={chartsRefs.pareto} className="h-full"></div>
-                                                </div>
                                             </div>
-                                        </div>
-                                    )}
-                                </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
 
