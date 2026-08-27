@@ -110,14 +110,20 @@ def generate_synthetic_workload(days=30, output_path="data/synthetic_workload.cs
         
         # --- Required Servers (optimal scale count) ---
         # Rule-based calculation of how many servers are needed
-        # Factor 1: Active users (1 server handles ~85 users)
-        srv_users = np.ceil(users / 85.0)
-        # Factor 2: CPU utilization (target 65% CPU limit)
-        srv_cpu = np.ceil(cpu / 65.0)
-        # Factor 3: Memory utilization (target 70% Memory limit)
-        srv_mem = np.ceil(mem / 70.0)
+        # Factor 1: Active users (1 server handles ~110 users)
+        srv_users = np.ceil(users / 110.0)
+        # Factor 2: CPU utilization (target 45% CPU limit to make it active)
+        srv_cpu = np.ceil(cpu / 45.0)
+        # Factor 3: Memory utilization (target 50% Memory limit to make it active)
+        srv_mem = np.ceil(mem / 50.0)
+        # Factor 4: Network traffic (target 250MB/s per server)
+        srv_net = np.ceil((net_in + net_out) / 250.0)
         
-        req_srv = int(max(1, srv_users, srv_cpu, srv_mem))
+        req_srv = int(max(1, srv_users, srv_cpu, srv_mem, srv_net))
+        # Add latency/CPU warning adjustment
+        if cpu > 80.0 or resp_time > 350.0:
+            req_srv = max(req_srv, req_srv + 1)
+            
         req_servers_list.append(req_srv)
         
         timestamps.append(dt.strftime("%Y-%m-%d %H:%M:%S"))

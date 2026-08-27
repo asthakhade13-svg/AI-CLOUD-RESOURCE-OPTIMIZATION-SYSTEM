@@ -49,7 +49,7 @@ def estimate_prediction_uncertainty(model, X_scaled) -> dict:
     intervals across predictions from all individual decision trees in the ensemble.
     """
     # Check if the model is an ensemble forest (e.g., RandomForestRegressor, ExtraTreesRegressor)
-    if hasattr(model, "estimators_") and model.estimators_:
+    if hasattr(model, "estimators_") and len(model.estimators_) > 0:
         try:
             # Gather predictions from each individual estimator tree
             tree_predictions = []
