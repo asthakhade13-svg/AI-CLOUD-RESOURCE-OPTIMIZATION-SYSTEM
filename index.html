@@ -1919,19 +1919,11 @@
                                                             {typeof val === 'number' ? (val >= 0 ? '+' : '') + val.toFixed(4) : '0.0000'}
                                                         </span>
                                                     </div>
-                                                    <div className="w-full bg-slate-200 dark:bg-slate-950 h-2 rounded-full overflow-hidden flex">
+                                                    <div className="w-full bg-slate-200 dark:bg-slate-950 h-2 rounded-full overflow-hidden relative">
                                                         {typeof val === 'number' && val >= 0 ? (
-                                                            <>
-                                                                <div className="w-1/2 bg-slate-200 dark:bg-slate-950"></div>
-                                                                <div className="bg-rose-500 h-2 rounded-r-full" style={{ width: `${Math.min(50, val * 50)}%` }}></div>
-                                                            </>
+                                                            <div className="absolute bg-rose-500 h-2 rounded-r-full" style={{ left: '50%', width: `${Math.min(50, val * 50)}%` }}></div>
                                                         ) : (
-                                                            <>
-                                                                <div className="w-1/2 flex justify-end">
-                                                                    <div className="bg-emerald-500 h-2 rounded-l-full" style={{ width: `${Math.min(50, Math.abs(typeof val === 'number' ? val : 0.0) * 50)}%` }}></div>
-                                                                </div>
-                                                                <div className="w-1/2 bg-slate-200 dark:bg-slate-950"></div>
-                                                            </>
+                                                            <div className="absolute bg-emerald-500 h-2 rounded-l-full" style={{ right: '50%', width: `${Math.min(50, Math.abs(typeof val === 'number' ? val : 0.0) * 50)}%` }}></div>
                                                         )}
                                                     </div>
                                                 </div>
