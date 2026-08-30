@@ -410,6 +410,7 @@
                 pareto: useRef(null)
             };
             const chartsInstances = useRef({});
+            const chartsContainers = useRef({});
 
 
             // 1. Initial health check and seed initial historical records
@@ -998,6 +999,14 @@
 
                 const updateOrCreate = (key, element, options) => {
                     if (!element) return;
+                    if (chartsInstances.current[key] && chartsContainers.current[key] !== element) {
+                        try {
+                            chartsInstances.current[key].destroy();
+                        } catch (e) {}
+                        chartsInstances.current[key] = null;
+                    }
+                    chartsContainers.current[key] = element;
+
                     if (chartsInstances.current[key]) {
                         try {
                             chartsInstances.current[key].updateOptions(options);
