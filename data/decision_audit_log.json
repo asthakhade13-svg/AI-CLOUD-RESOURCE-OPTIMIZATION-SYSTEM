@@ -1,5 +1,257 @@
 [
   {
+    "timestamp": "2026-08-27T23:28:00.341671",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-27T23:16:53.240165",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-26T22:13:22.907248",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-26T22:09:55.749926",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-26T22:07:24.476306",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-24T17:22:36.031515",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-24T17:21:53.517050",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-24T17:18:04.037733",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-24T17:15:54.348945",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-24T17:15:14.360610",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-24T17:08:01.477098",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
+    "timestamp": "2026-08-23T21:17:18.827020",
+    "model_version": "v1.2.0-champion",
+    "input_summary": {
+      "current_replicas": 4,
+      "predicted_traffic": 300.0,
+      "current_cpu": 75.0,
+      "current_latency": 120.0,
+      "anomaly_severity": "NONE"
+    },
+    "prediction": {
+      "recommended_servers": 6,
+      "confidence": 0.92
+    },
+    "action": "SCALE_UP_2",
+    "risk_score": "LOW",
+    "policy_result": "PASSED",
+    "reason": "Scale from 4 to 6 replicas because traffic is expected to increase by 200%, CPU is at 75%, and the current configuration is projected to violate the 250 ms latency SLA.",
+    "operator": "SYSTEM_AI",
+    "execution_result": "SIMULATED_SUCCESS"
+  },
+  {
     "timestamp": "2026-08-23T21:06:05.212186",
     "model_version": "v1.2.0-champion",
     "input_summary": {
