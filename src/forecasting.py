@@ -7,7 +7,10 @@ import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from xgboost import XGBRegressor
+try:
+    from xgboost import XGBRegressor
+except Exception:
+    XGBRegressor = None
 
 # File paths
 CLEANED_DATA_PATH = "data/cleaned_workload.csv"
@@ -143,9 +146,10 @@ def train_and_compare_forecasters():
         # MultiOutputRegressor is required since we predict 6 targets simultaneously
         models = {
             "Random Forest": MultiOutputRegressor(RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)),
-            "XGBoost": XGBRegressor(n_estimators=100, learning_rate=0.08, max_depth=5, random_state=42, n_jobs=-1),
             "Gradient Boosting": MultiOutputRegressor(GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42))
         }
+        if XGBRegressor is not None:
+            models["XGBoost"] = XGBRegressor(n_estimators=100, learning_rate=0.08, max_depth=5, random_state=42, n_jobs=-1)
         
         best_r2 = -999.0
         best_name = None

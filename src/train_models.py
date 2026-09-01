@@ -7,8 +7,14 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from xgboost import XGBRegressor
-from lightgbm import LGBMRegressor
+try:
+    from xgboost import XGBRegressor
+except Exception:
+    XGBRegressor = None
+try:
+    from lightgbm import LGBMRegressor
+except Exception:
+    LGBMRegressor = None
 
 CLEANED_DATA_PATH = "data/cleaned_workload.csv"
 SCALER_PATH = "artifacts/scaler.pkl"
@@ -142,9 +148,11 @@ def train_and_compare_models():
         "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
         "Gradient Boosting": GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42),
         "Extra Trees": ExtraTreesRegressor(n_estimators=100, random_state=42, n_jobs=-1),
-        "XGBoost": XGBRegressor(n_estimators=100, learning_rate=0.08, max_depth=5, random_state=42, n_jobs=-1),
-        "LightGBM": LGBMRegressor(n_estimators=100, learning_rate=0.08, random_state=42, n_jobs=-1, verbose=-1)
     }
+    if XGBRegressor is not None:
+        models["XGBoost"] = XGBRegressor(n_estimators=100, learning_rate=0.08, max_depth=5, random_state=42, n_jobs=-1)
+    if LGBMRegressor is not None:
+        models["LightGBM"] = LGBMRegressor(n_estimators=100, learning_rate=0.08, random_state=42, n_jobs=-1, verbose=-1)
     
     results_list = []
     trained_models = {}

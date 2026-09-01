@@ -11,8 +11,14 @@ from datetime import datetime, timedelta
 from scipy.stats import ks_2samp
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.ensemble import RandomForestRegressor
-from xgboost import XGBRegressor
-from lightgbm import LGBMRegressor
+try:
+    from xgboost import XGBRegressor
+except Exception:
+    XGBRegressor = None
+try:
+    from lightgbm import LGBMRegressor
+except Exception:
+    LGBMRegressor = None
 
 REGISTRY_PATH = "artifacts/model_registry.json"
 MODELS_DIR = "artifacts/models"
