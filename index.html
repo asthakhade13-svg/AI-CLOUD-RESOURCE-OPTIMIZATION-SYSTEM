@@ -2029,18 +2029,18 @@
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                     
                                     {/* Priority Sliders */}
-                                    <div className="lg:col-span-2 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-900 pb-3">
+                                    <div className="lg:col-span-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 rounded-xl p-5 shadow-sm space-y-4">
+                                        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><circle cx="12" cy="12" r="3"/><path d="M3 16h18M3 8h18"/></svg>
-                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Configurable Objective Priority Weights</h2>
+                                            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">Configurable Objective Priority Weights</h2>
                                         </div>
                                         
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             {Object.entries(optWeights).map(([name, weight]) => (
                                                 <div key={name} className="space-y-1.5">
                                                     <div className="flex justify-between text-xs">
-                                                        <span className="text-slate-400 capitalize">{name.replace('underprovisioning', 'Underprovisioning').replace('overprovisioning', 'Overprovisioning')} Priority:</span>
-                                                        <span className="font-mono font-bold text-brand-400">{weight.toFixed(1)}</span>
+                                                        <span className="text-slate-600 dark:text-slate-400 capitalize font-medium">{name.replace('underprovisioning', 'Underprovisioning').replace('overprovisioning', 'Overprovisioning')} Priority:</span>
+                                                        <span className="font-mono font-bold text-brand-600 dark:text-brand-400">{weight.toFixed(1)}</span>
                                                     </div>
                                                     <input 
                                                         type="range" 
@@ -2053,7 +2053,7 @@
                                                             setOptWeights(newW);
                                                             triggerOptimization(newW);
                                                         }} 
-                                                        className="w-full h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-brand-500" 
+                                                        className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-500" 
                                                     />
                                                 </div>
                                             ))}
@@ -2061,11 +2061,11 @@
                                     </div>
                                     
                                     {/* Optimization Decision Summary Card */}
-                                    <div className="border border-slate-900 bg-slate-900/20 rounded-xl p-5 flex flex-col justify-between border-slate-900">
+                                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 rounded-xl p-5 shadow-sm flex flex-col justify-between">
                                         <div>
-                                            <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-900 pb-3">
+                                            <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-500"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Optimization Verdict</h2>
+                                                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-800 dark:text-slate-200">Optimization Verdict</h2>
                                             </div>
                                             
                                             {optResult ? (
@@ -2160,64 +2160,64 @@
                             <div className="space-y-6">
                                 {/* MLOps Telemetry Cards */}
                                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-1">
-                                        <div className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Active Champion Model</div>
-                                        <div className="text-xl font-bold font-mono text-emerald-400">{mlopsStatus?.active_version || 'LOADING'}</div>
-                                        <div className="text-[10px] text-slate-400 font-mono truncate">{mlopsStatus?.algorithm || 'Loading...'}</div>
+                                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-5 rounded-xl shadow-sm space-y-1.5">
+                                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Active Champion Model</div>
+                                        <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">{mlopsStatus?.active_version || 'LOADING'}</div>
+                                        <div className="text-xs text-slate-600 dark:text-slate-400 font-mono truncate">{mlopsStatus?.algorithm || 'Loading...'}</div>
                                     </div>
-                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-1">
-                                        <div className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Model Deployment Age</div>
-                                        <div className="text-xl font-bold font-mono text-slate-300">{mlopsStatus?.age_days !== undefined ? `${mlopsStatus.age_days} Days` : 'LOADING'}</div>
-                                        <div className="text-[10px] text-slate-400 font-mono">Created: {mlopsStatus?.created_at ? mlopsStatus.created_at.split('T')[0] : 'Loading...'}</div>
+                                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-5 rounded-xl shadow-sm space-y-1.5">
+                                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Model Deployment Age</div>
+                                        <div className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100">{mlopsStatus?.age_days !== undefined ? `${mlopsStatus.age_days} Days` : 'LOADING'}</div>
+                                        <div className="text-xs text-slate-600 dark:text-slate-400 font-mono">Created: {mlopsStatus?.created_at ? mlopsStatus.created_at.split('T')[0] : 'Loading...'}</div>
                                     </div>
-                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-1">
-                                        <div className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Current Rolling MAE</div>
-                                        <div className="text-xl font-bold font-mono text-pink-400">
+                                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-5 rounded-xl shadow-sm space-y-1.5">
+                                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Current Rolling MAE</div>
+                                        <div className="text-2xl font-bold font-mono text-pink-600 dark:text-pink-400">
                                             {mlopsMetrics?.mae ? mlopsMetrics.mae.toFixed(4) : '0.0000'}
                                         </div>
-                                        <div className="text-[10px] text-slate-400 font-mono">Samples: {mlopsMetrics?.samples_evaluated || 0} resolved ticks</div>
+                                        <div className="text-xs text-slate-600 dark:text-slate-400 font-mono">Samples: {mlopsMetrics?.samples_evaluated || 0} resolved ticks</div>
                                     </div>
-                                    <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 p-4 rounded-xl space-y-1">
-                                        <div className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider">Data Drift Status</div>
-                                        <div className={`text-xl font-bold font-mono ${mlopsDrift?.drift_detected ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-5 rounded-xl shadow-sm space-y-1.5">
+                                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data Drift Status</div>
+                                        <div className={`text-2xl font-bold font-mono ${mlopsDrift?.drift_detected ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                             {mlopsDrift?.drift_detected ? 'DRIFT DETECTED' : 'STABLE'}
                                         </div>
-                                        <div className="text-[10px] text-slate-400 font-mono">Severity: {mlopsDrift?.severity || 'LOW'} (Score: {mlopsDrift?.drift_score ? mlopsDrift.drift_score.toFixed(3) : '0.00'})</div>
+                                        <div className="text-xs text-slate-600 dark:text-slate-400 font-mono">Severity: {mlopsDrift?.severity || 'LOW'} (Score: {mlopsDrift?.drift_score ? mlopsDrift.drift_score.toFixed(3) : '0.00'})</div>
                                     </div>
                                 </div>
 
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                     {/* MLOps Model Registry and Rollback Control */}
-                                    <div className="lg:col-span-1 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-3 flex items-center gap-2">
+                                    <div className="lg:col-span-1 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 rounded-xl p-5 shadow-sm space-y-4">
+                                        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 pb-3 flex items-center gap-2">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-500"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                                             Model Registry & Control
                                         </h3>
                                         
                                         <div className="space-y-3 text-xs">
-                                            <div className="flex justify-between items-center py-2 border-b border-slate-900/40">
-                                                <span className="text-slate-400">Baseline MAE:</span>
-                                                <span className="font-mono text-slate-300">{mlopsStatus?.champion_model?.metrics?.mae ? mlopsStatus.champion_model.metrics.mae.toFixed(4) : '0.0820'}</span>
+                                            <div className="flex justify-between items-center py-2.5 border-b border-slate-100 dark:border-slate-800/60">
+                                                <span className="text-slate-600 dark:text-slate-400 font-medium">Baseline MAE:</span>
+                                                <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{mlopsStatus?.champion_model?.metrics?.mae ? mlopsStatus.champion_model.metrics.mae.toFixed(4) : '0.0820'}</span>
                                             </div>
-                                            <div className="flex justify-between items-center py-2 border-b border-slate-900/40">
-                                                <span className="text-slate-400">Baseline RMSE:</span>
-                                                <span className="font-mono text-slate-300">{mlopsStatus?.champion_model?.metrics?.rmse ? mlopsStatus.champion_model.metrics.rmse.toFixed(4) : '0.1250'}</span>
+                                            <div className="flex justify-between items-center py-2.5 border-b border-slate-100 dark:border-slate-800/60">
+                                                <span className="text-slate-600 dark:text-slate-400 font-medium">Baseline RMSE:</span>
+                                                <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{mlopsStatus?.champion_model?.metrics?.rmse ? mlopsStatus.champion_model.metrics.rmse.toFixed(4) : '0.1250'}</span>
                                             </div>
-                                            <div className="flex justify-between items-center py-2 border-b border-slate-900/40">
-                                                <span className="text-slate-400">Last Retrained:</span>
-                                                <span className="text-slate-300">{mlopsStatus?.last_retrained ? mlopsStatus.last_retrained.replace('T', ' ').split('.')[0] : 'Never'}</span>
+                                            <div className="flex justify-between items-center py-2.5 border-b border-slate-100 dark:border-slate-800/60">
+                                                <span className="text-slate-600 dark:text-slate-400 font-medium">Last Retrained:</span>
+                                                <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{mlopsStatus?.last_retrained ? mlopsStatus.last_retrained.replace('T', ' ').split('.')[0] : 'Never'}</span>
                                             </div>
-                                            <div className="flex justify-between items-center py-2 border-b border-slate-900/40">
-                                                <span className="text-slate-400">Challenger Status:</span>
-                                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">READY</span>
+                                            <div className="flex justify-between items-center py-2.5 border-b border-slate-100 dark:border-slate-800/60">
+                                                <span className="text-slate-600 dark:text-slate-400 font-medium">Challenger Status:</span>
+                                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20">READY</span>
                                             </div>
                                         </div>
 
-                                        <div className="pt-4 border-t border-slate-900/60 space-y-3">
-                                            <div className="text-xs text-slate-500 italic">
+                                        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                                            <div className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                                                 If the current model degrades in performance, you can swap it back to the previous stable model.
                                             </div>
-                                            <button onClick={() => triggerMlopsRollback()} disabled={mlopsLoading || !mlopsStatus?.rollback_events} className="w-full bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/30 hover:border-rose-900/60 text-rose-400 font-semibold rounded-lg text-xs px-4 py-2.5 transition duration-200">
+                                            <button onClick={() => triggerMlopsRollback()} disabled={mlopsLoading || !mlopsStatus?.rollback_events} className="w-full bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-semibold rounded-lg text-xs px-4 py-2.5 transition duration-200 shadow-sm disabled:opacity-50">
                                                 Rollback Model Swap
                                             </button>
                                         </div>
@@ -2225,14 +2225,14 @@
                                         {mlopsStatus?.rollback_events?.length > 0 && (
                                             <div className="space-y-2">
                                                 <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Rollback Events</div>
-                                                <div className="bg-slate-950/50 border border-slate-900 rounded-lg p-3 max-h-32 overflow-y-auto space-y-2">
+                                                <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg p-3 max-h-36 overflow-y-auto space-y-2">
                                                     {mlopsStatus.rollback_events.map((ev, index) => (
-                                                        <div key={index} className="text-[10px] border-b border-slate-900/60 pb-1.5 last:border-b-0 last:pb-0 text-slate-300">
-                                                            <div className="flex justify-between font-mono text-rose-400 mb-0.5">
+                                                        <div key={index} className="text-[10px] border-b border-slate-200 dark:border-slate-800/60 pb-1.5 last:border-b-0 last:pb-0 text-slate-700 dark:text-slate-300">
+                                                            <div className="flex justify-between font-mono text-rose-600 dark:text-rose-400 mb-0.5">
                                                                 <span>{ev.from_version} → {ev.to_version}</span>
                                                                 <span>{ev.timestamp.split('T')[1].split('.')[0]}</span>
                                                             </div>
-                                                            <div className="italic text-slate-400">"{ev.reason}"</div>
+                                                            <div className="italic text-slate-600 dark:text-slate-400">"{ev.reason}"</div>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -2241,13 +2241,13 @@
                                     </div>
 
                                     {/* MLOps Drift Details and Retrain Trigger */}
-                                    <div className="lg:col-span-2 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-3 flex items-center justify-between">
+                                    <div className="lg:col-span-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 rounded-xl p-5 shadow-sm space-y-4">
+                                        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 pb-3 flex items-center justify-between">
                                             <span className="flex items-center gap-2">
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
                                                 Kolmogorov-Smirnov Drift Diagnostics
                                             </span>
-                                            <button onClick={() => fetchMlopsStatus()} disabled={mlopsLoading} className="px-2.5 py-1 text-xs bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded">
+                                            <button onClick={() => fetchMlopsStatus()} disabled={mlopsLoading} className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded font-medium transition shadow-sm">
                                                 Refresh Diagn.
                                             </button>
                                         </h3>
@@ -2256,40 +2256,40 @@
                                             {mlopsDrift?.features ? Object.keys(mlopsDrift.features).map((feat, i) => {
                                                 const d = mlopsDrift.features[feat];
                                                 return (
-                                                    <div key={i} className="bg-slate-950/40 border border-slate-900 p-3 rounded-lg flex items-center justify-between">
+                                                    <div key={i} className="bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/80 p-3.5 rounded-lg flex items-center justify-between">
                                                         <div>
-                                                            <div className="text-xs font-semibold text-slate-300 capitalize">{feat.replace('_', ' ')}</div>
-                                                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">KS Stat: {d.ks_statistic.toFixed(3)} | p: {d.p_value.toFixed(4)}</div>
+                                                            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 capitalize">{feat.replace('_', ' ')}</div>
+                                                            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">KS Stat: {d.ks_statistic.toFixed(3)} | p: {d.p_value.toFixed(4)}</div>
                                                         </div>
-                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${d.drift_detected ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                                                        <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${d.drift_detected ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20'}`}>
                                                             {d.drift_detected ? 'DRIFT' : 'OK'}
                                                         </span>
                                                     </div>
                                                 );
                                             }) : (
-                                                <div className="col-span-2 text-center py-6 text-slate-500 text-xs italic">
+                                                <div className="col-span-2 text-center py-6 text-slate-500 dark:text-slate-400 text-xs italic">
                                                     Need at least 50 production prediction log records to calculate statistical drift distributions.
                                                 </div>
                                             )}
                                         </div>
 
-                                        <div className="pt-4 border-t border-slate-900/60 space-y-4">
-                                            <h4 className="text-xs font-semibold uppercase text-slate-400 tracking-wider">Retraining pipeline execution gate</h4>
-                                            <div className="text-xs text-slate-400 bg-slate-950/30 p-3 rounded-lg border border-slate-900/60 leading-relaxed">
+                                        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                                            <h4 className="text-xs font-semibold uppercase text-slate-700 dark:text-slate-300 tracking-wider">Retraining pipeline execution gate</h4>
+                                            <div className="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950/40 p-4 rounded-lg border border-slate-200 dark:border-slate-800 leading-relaxed shadow-sm">
                                                 The training pipeline evaluates the Challenger model over historical logs + new feedback. Promotion requires the Challenger to demonstrate R² improvements and validation MAE gains without degrading SLA constraints.
                                             </div>
                                             
                                             <div className="flex gap-4">
-                                                <button onClick={() => triggerMlopsRetrain(false)} disabled={mlopsLoading} className="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg px-4 py-2.5 transition duration-200">
+                                                <button onClick={() => triggerMlopsRetrain(false)} disabled={mlopsLoading} className="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg px-4 py-2.5 transition duration-200 shadow-sm">
                                                     Check & Retrain Model
                                                 </button>
-                                                <button onClick={() => triggerMlopsRetrain(true)} disabled={mlopsLoading} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 rounded-lg px-4 py-2.5 transition duration-200">
+                                                <button onClick={() => triggerMlopsRetrain(true)} disabled={mlopsLoading} className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2.5 transition duration-200 shadow-sm">
                                                     Force Immediate Retrain
                                                 </button>
                                             </div>
 
                                             {mlopsRetrainResult && (
-                                                <div className={`text-xs p-3 rounded-lg border leading-relaxed ${mlopsRetrainResult.success ? (mlopsRetrainResult.promoted ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20') : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+                                                <div className={`text-xs p-3.5 rounded-lg border leading-relaxed ${mlopsRetrainResult.success ? (mlopsRetrainResult.promoted ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' : 'bg-blue-50 text-blue-800 dark:bg-blue-500/10 dark:text-blue-400 border-blue-200 dark:border-blue-500/20') : 'bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-400 border-rose-200 dark:border-rose-500/20'}`}>
                                                     <div className="font-semibold mb-1">{mlopsRetrainResult.success ? 'Retraining Completed' : 'Retraining Failed'}</div>
                                                     <div>{mlopsRetrainResult.reason}</div>
                                                 </div>
@@ -2444,39 +2444,39 @@
                                     </div>
 
                                     {/* Incident Center & Timeline Feed */}
-                                    <div className="lg:col-span-1 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-3 flex items-center gap-2">
+                                    <div className="lg:col-span-1 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 rounded-xl p-5 shadow-sm space-y-4">
+                                        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 pb-3 flex items-center gap-2">
                                             <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-ping"></span>
                                             Active Incidents Alert Feed
                                         </h3>
                                         
                                         {aiopsIncidents.length === 0 ? (
-                                            <div className="text-center py-12 text-slate-500 text-xs italic">
+                                            <div className="text-center py-12 text-slate-500 dark:text-slate-400 text-xs italic">
                                                 No active incidents. Dependency graph operating normally.
                                             </div>
                                         ) : (
                                             <div className="space-y-4 overflow-y-auto max-h-[500px] pr-1">
                                                 {aiopsIncidents.map((inc, i) => (
-                                                    <div key={i} className={`p-4 rounded-xl border space-y-3 ${inc.status === 'active' ? 'bg-rose-950/15 border-rose-900/50' : 'bg-slate-900/15 border-slate-900'}`}>
+                                                    <div key={i} className={`p-4 rounded-xl border space-y-3 ${inc.status === 'active' ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50' : 'bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800'}`}>
                                                         <div className="flex justify-between items-start">
                                                             <div className="space-y-0.5">
-                                                                <span className="font-mono text-[10px] text-slate-500">{inc.id} | {inc.timestamp.split('T')[1].split('.')[0]}</span>
-                                                                <h4 className="text-xs font-bold text-slate-200 leading-snug">{inc.incident}</h4>
+                                                                <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">{inc.id} | {inc.timestamp.split('T')[1].split('.')[0]}</span>
+                                                                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-snug">{inc.incident}</h4>
                                                             </div>
-                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${inc.severity === 'CRITICAL' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${inc.severity === 'CRITICAL' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-300 dark:border-rose-500/30' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-300 dark:border-amber-500/20'}`}>
                                                                 {inc.severity}
                                                             </span>
                                                         </div>
 
                                                         {/* RCA Details */}
-                                                        <div className="bg-slate-950/65 rounded-lg p-3 text-[11px] space-y-2 border border-slate-900">
+                                                        <div className="bg-white dark:bg-slate-950/80 rounded-lg p-3 text-[11px] space-y-2 border border-slate-200 dark:border-slate-800 shadow-sm">
                                                             <div className="flex justify-between">
-                                                                <span className="text-slate-400 font-semibold">🔍 Likely Root Cause:</span>
-                                                                <span className="text-rose-400 font-bold font-mono">{inc.root_cause}</span>
+                                                                <span className="text-slate-600 dark:text-slate-400 font-semibold">🔍 Likely Root Cause:</span>
+                                                                <span className="text-rose-600 dark:text-rose-400 font-bold font-mono">{inc.root_cause}</span>
                                                             </div>
                                                             <div className="flex justify-between">
-                                                                <span className="text-slate-400">Confidence Score:</span>
-                                                                <span className="text-brand-400 font-mono font-bold">{(inc.confidence * 100).toFixed(0)}%</span>
+                                                                <span className="text-slate-600 dark:text-slate-400">Confidence Score:</span>
+                                                                <span className="text-brand-600 dark:text-brand-400 font-mono font-bold">{(inc.confidence * 100).toFixed(0)}%</span>
                                                             </div>
                                                             <div className="flex justify-between">
                                                                 <span className="text-slate-400">SLA Impact Risk:</span>
@@ -2515,8 +2515,8 @@
                                 </div>
 
                                 {/* Chaos Experiments Benchmarking Reports */}
-                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 space-y-4">
-                                    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 rounded-xl p-5 shadow-sm space-y-4">
+                                    <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                                         Active Remediation & Chaos Experiments Benchmarks
                                     </h3>
                                     
@@ -2524,24 +2524,24 @@
                                         <div className="lg:col-span-2 overflow-x-auto">
                                             <table className="w-full text-left text-xs border-collapse">
                                                 <thead>
-                                                    <tr className="border-b border-slate-800 text-slate-400 font-bold">
-                                                        <th className="py-2">Policy Layer</th>
-                                                        <th className="py-2">Detection Latency</th>
-                                                        <th className="py-2">RCA Isolation</th>
-                                                        <th className="py-2">Total Recovery Time</th>
-                                                        <th className="py-2 text-center">SLA Violations</th>
-                                                        <th className="py-2 text-center">Cost Index</th>
-                                                        <th className="py-2 text-center">Scaling Events</th>
+                                                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-semibold">
+                                                        <th className="py-2.5">Policy Layer</th>
+                                                        <th className="py-2.5">Detection Latency</th>
+                                                        <th className="py-2.5">RCA Isolation</th>
+                                                        <th className="py-2.5">Total Recovery Time</th>
+                                                        <th className="py-2.5 text-center">SLA Violations</th>
+                                                        <th className="py-2.5 text-center">Cost Index</th>
+                                                        <th className="py-2.5 text-center">Scaling Events</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {aiopsExperiments?.scenarios.map((sc, index) => (
-                                                        <tr key={index} className="border-b border-slate-900 text-slate-200">
-                                                            <td className="py-3 font-semibold text-brand-400">{sc.policy}</td>
+                                                        <tr key={index} className="border-b border-slate-100 dark:border-slate-800/60 text-slate-800 dark:text-slate-200">
+                                                            <td className="py-3 font-semibold text-brand-600 dark:text-brand-400">{sc.policy}</td>
                                                             <td className="py-3 font-mono">{sc.detection_time_sec.toFixed(1)}s</td>
                                                             <td className="py-3 font-mono">{sc.root_cause_id_time_sec.toFixed(1)}s</td>
-                                                            <td className="py-3 font-mono text-emerald-400">{sc.recovery_time_sec.toFixed(1)}s</td>
-                                                            <td className="py-3 text-center text-rose-400 font-bold font-mono">{sc.sla_violations}</td>
+                                                            <td className="py-3 font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{sc.recovery_time_sec.toFixed(1)}s</td>
+                                                            <td className="py-3 text-center text-rose-600 dark:text-rose-400 font-bold font-mono">{sc.sla_violations}</td>
                                                             <td className="py-3 text-center font-mono">{sc.cost_multiplier.toFixed(2)}x</td>
                                                             <td className="py-3 text-center font-mono">{sc.scaling_events}</td>
                                                         </tr>
@@ -2549,9 +2549,9 @@
                                                 </tbody>
                                             </table>
                                         </div>
-                                        <div className="lg:col-span-1 bg-slate-950/40 border border-slate-900 p-4 rounded-xl space-y-2">
-                                            <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">AIOps Benchmark Takeaways:</h4>
-                                            <div className="space-y-2 text-[10px] text-slate-500 leading-relaxed">
+                                        <div className="lg:col-span-1 bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-4 rounded-xl space-y-2.5">
+                                            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">AIOps Benchmark Takeaways:</h4>
+                                            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                                                 {aiopsExperiments?.evidence.map((ev, i) => (
                                                     <p key={i}>• {ev}</p>
                                                 ))}
@@ -2578,33 +2578,33 @@
                                         <p className="text-[10px] text-slate-500 italic">Autonomous mode is disabled by default and requires safety policies enforcement validation on every execution cycle.</p>
                                     </div>
 
-                                    <div className="border border-slate-900 bg-slate-900/20 p-5 rounded-xl flex items-center justify-between gap-4">
+                                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-5 rounded-xl shadow-sm flex items-center justify-between gap-4">
                                         <div className="space-y-1">
-                                            <h3 className="text-xs font-semibold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                                            <h3 className="text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
                                                 <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping"></span>
-                                                Global Emergency stop
+                                                Global Emergency Stop
                                             </h3>
-                                            <p className="text-[10px] text-slate-500 leading-relaxed">Instantly blocks all automated scaling patches. Recommenders generate events for human audit only.</p>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Instantly blocks all automated scaling patches. Recommenders generate events for human audit only.</p>
                                         </div>
                                         <div className="flex flex-col gap-2">
-                                            <button onClick={() => triggerEmergencyHalt()} className="bg-rose-950/20 border border-rose-900/50 hover:bg-rose-900/20 text-rose-400 text-xs font-bold py-1.5 px-3 rounded transition">
+                                            <button onClick={() => triggerEmergencyHalt()} className="bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold py-1.5 px-3 rounded-lg transition shadow-sm">
                                                 ENGAGE HALT
                                             </button>
-                                            <button onClick={() => releaseEmergencyHalt()} className="bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold py-1.5 px-3 rounded transition border border-slate-800">
+                                            <button onClick={() => releaseEmergencyHalt()} className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold py-1.5 px-3 rounded-lg transition border border-slate-300 dark:border-slate-700 shadow-sm">
                                                 RELEASE STOP
                                             </button>
                                         </div>
                                     </div>
 
-                                    <div className="border border-slate-900 bg-slate-900/20 p-5 rounded-xl space-y-2">
-                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Active Risk score</h3>
+                                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-5 rounded-xl shadow-sm space-y-2">
+                                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Active Risk Score</h3>
                                         <div className="flex items-baseline justify-between">
-                                            <span className={`text-2xl font-black font-mono ${safetyRisk?.status === 'CRITICAL' || safetyRisk?.status === 'HIGH' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                            <span className={`text-2xl font-black font-mono ${safetyRisk?.status === 'CRITICAL' || safetyRisk?.status === 'HIGH' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                                 {safetyRisk?.status || 'LOW'}
                                             </span>
-                                            <span className="text-xs text-slate-500 font-mono">Score: {safetyRisk?.score ? safetyRisk.score.toFixed(2) : '0.00'}/1.0</span>
+                                            <span className="text-xs text-slate-600 dark:text-slate-400 font-mono">Score: {safetyRisk?.score ? safetyRisk.score.toFixed(2) : '0.00'}/1.0</span>
                                         </div>
-                                        <div className="text-[10px] text-slate-400 font-mono grid grid-cols-2 gap-x-2 gap-y-0.5 pt-1.5 border-t border-slate-900">
+                                        <div className="text-[11px] text-slate-600 dark:text-slate-400 font-mono grid grid-cols-2 gap-x-2 gap-y-0.5 pt-2 border-t border-slate-100 dark:border-slate-800">
                                             <div>SLA Risk: {safetyRisk?.metrics.sla_risk_pct}%</div>
                                             <div>Uncertainty: {safetyRisk?.metrics.prediction_uncertainty.toFixed(2)}</div>
                                         </div>
@@ -2613,8 +2613,8 @@
 
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                     {/* Policy Config Form */}
-                                    <div className="lg:col-span-1 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-3 flex items-center gap-1.5">
+                                    <div className="lg:col-span-1 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 rounded-xl p-5 shadow-sm space-y-4">
+                                        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 pb-3 flex items-center gap-1.5">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-500"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
                                             Enforced Policy Guardrails
                                         </h3>
@@ -2634,35 +2634,35 @@
                                                 });
                                             }} className="space-y-3.5 text-xs">
                                                 <div className="flex justify-between items-center">
-                                                    <label className="text-slate-400">Min Replicas</label>
-                                                    <input name="min_replicas" type="number" defaultValue={safetyPolicies.min_replicas} className="bg-slate-950 border border-slate-800 rounded px-2 py-1 w-20 text-right text-slate-200 font-mono" />
+                                                    <label className="text-slate-600 dark:text-slate-400 font-medium">Min Replicas</label>
+                                                    <input name="min_replicas" type="number" defaultValue={safetyPolicies.min_replicas} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded px-2.5 py-1 w-20 text-right text-slate-800 dark:text-slate-200 font-mono" />
                                                 </div>
                                                 <div className="flex justify-between items-center">
-                                                    <label className="text-slate-400">Max Replicas</label>
-                                                    <input name="max_replicas" type="number" defaultValue={safetyPolicies.max_replicas} className="bg-slate-950 border border-slate-800 rounded px-2 py-1 w-20 text-right text-slate-200 font-mono" />
+                                                    <label className="text-slate-600 dark:text-slate-400 font-medium">Max Replicas</label>
+                                                    <input name="max_replicas" type="number" defaultValue={safetyPolicies.max_replicas} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded px-2.5 py-1 w-20 text-right text-slate-800 dark:text-slate-200 font-mono" />
                                                 </div>
                                                 <div className="flex justify-between items-center">
-                                                    <label className="text-slate-400">Max Scaling Step</label>
-                                                    <input name="scaling_step_limit" type="number" defaultValue={safetyPolicies.scaling_step_limit} className="bg-slate-950 border border-slate-800 rounded px-2 py-1 w-20 text-right text-slate-200 font-mono" />
+                                                    <label className="text-slate-600 dark:text-slate-400 font-medium">Max Scaling Step</label>
+                                                    <input name="scaling_step_limit" type="number" defaultValue={safetyPolicies.scaling_step_limit} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded px-2.5 py-1 w-20 text-right text-slate-800 dark:text-slate-200 font-mono" />
                                                 </div>
                                                 <div className="flex justify-between items-center">
-                                                    <label className="text-slate-400">Cooldown Window (s)</label>
-                                                    <input name="cooldown_seconds" type="number" defaultValue={safetyPolicies.cooldown_seconds} className="bg-slate-950 border border-slate-800 rounded px-2 py-1 w-20 text-right text-slate-200 font-mono" />
+                                                    <label className="text-slate-600 dark:text-slate-400 font-medium">Cooldown Window (s)</label>
+                                                    <input name="cooldown_seconds" type="number" defaultValue={safetyPolicies.cooldown_seconds} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded px-2.5 py-1 w-20 text-right text-slate-800 dark:text-slate-200 font-mono" />
                                                 </div>
                                                 <div className="flex justify-between items-center">
-                                                    <label className="text-slate-400">Budget Limit ($/hr)</label>
-                                                    <input name="budget_limit_hourly" type="number" step="0.1" defaultValue={safetyPolicies.budget_limit_hourly} className="bg-slate-950 border border-slate-800 rounded px-2 py-1 w-20 text-right text-slate-200 font-mono" />
+                                                    <label className="text-slate-600 dark:text-slate-400 font-medium">Budget Limit ($/hr)</label>
+                                                    <input name="budget_limit_hourly" type="number" step="0.1" defaultValue={safetyPolicies.budget_limit_hourly} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded px-2.5 py-1 w-20 text-right text-slate-800 dark:text-slate-200 font-mono" />
                                                 </div>
                                                 <div className="flex justify-between items-center">
-                                                    <label className="text-slate-400">SLA Latency Target (ms)</label>
-                                                    <input name="sla_latency_threshold_ms" type="number" defaultValue={safetyPolicies.sla_latency_threshold_ms} className="bg-slate-950 border border-slate-800 rounded px-2 py-1 w-20 text-right text-slate-200 font-mono" />
+                                                    <label className="text-slate-600 dark:text-slate-400 font-medium">SLA Latency Target (ms)</label>
+                                                    <input name="sla_latency_threshold_ms" type="number" defaultValue={safetyPolicies.sla_latency_threshold_ms} className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded px-2.5 py-1 w-20 text-right text-slate-800 dark:text-slate-200 font-mono" />
                                                 </div>
-                                                <div className="flex justify-between items-center pt-2 border-t border-slate-900/60">
-                                                    <label className="text-slate-400">Emergency restrictions</label>
-                                                    <input name="emergency_restrictions" type="checkbox" defaultChecked={safetyPolicies.emergency_restrictions} className="h-4 w-4 bg-slate-950 rounded border-slate-800 accent-brand-600" />
+                                                <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-800">
+                                                    <label className="text-slate-600 dark:text-slate-400 font-medium">Emergency restrictions</label>
+                                                    <input name="emergency_restrictions" type="checkbox" defaultChecked={safetyPolicies.emergency_restrictions} className="h-4 w-4 bg-slate-50 dark:bg-slate-950 rounded border-slate-300 dark:border-slate-800 accent-brand-600" />
                                                 </div>
                                                 
-                                                <button type="submit" disabled={safetyLoading} className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded py-2 transition duration-200 mt-2">
+                                                <button type="submit" disabled={safetyLoading} className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg py-2.5 transition duration-200 mt-2 shadow-sm">
                                                     Save Guardrails Configuration
                                                 </button>
                                             </form>
@@ -2670,39 +2670,39 @@
                                     </div>
 
                                     {/* What-If Simulation Panel */}
-                                    <div className="lg:col-span-2 border border-slate-900 bg-slate-900/20 rounded-xl p-5 space-y-4">
-                                        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-3 flex items-center gap-1.5">
+                                    <div className="lg:col-span-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 rounded-xl p-5 shadow-sm space-y-4">
+                                        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 pb-3 flex items-center gap-1.5">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-brand-500"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                                             What-If Scenario Simulation Planner
                                         </h3>
                                         
-                                        <div className="flex items-center gap-4 bg-slate-950/40 p-4 border border-slate-900 rounded-lg">
+                                        <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-950/40 p-4 border border-slate-200 dark:border-slate-800 rounded-lg">
                                             <div className="flex-1 space-y-1">
-                                                <label className="text-xs text-slate-400">What if transaction workload traffic surges by:</label>
+                                                <label className="text-xs text-slate-600 dark:text-slate-400 font-medium">What if transaction workload traffic surges by:</label>
                                                 <div className="flex items-center gap-2">
-                                                    <input type="number" value={whatIfScenario.traffic_increase_pct} onChange={(e) => setWhatIfScenario({ traffic_increase_pct: e.target.value })} className="bg-slate-950 border border-slate-800 rounded px-3 py-1.5 w-24 text-slate-200 font-mono text-xs" />
-                                                    <span className="text-xs text-slate-400 dark:text-slate-500">% workload volume increase</span>
+                                                    <input type="number" value={whatIfScenario.traffic_increase_pct} onChange={(e) => setWhatIfScenario({ traffic_increase_pct: e.target.value })} className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded px-3 py-1.5 w-24 text-slate-800 dark:text-slate-200 font-mono text-xs shadow-sm" />
+                                                    <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">% workload volume increase</span>
                                                 </div>
                                             </div>
-                                            <button onClick={() => runWhatIf()} disabled={safetyLoading} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold py-2 px-4 rounded transition">
+                                            <button onClick={() => runWhatIf()} disabled={safetyLoading} className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold py-2.5 px-4 rounded-lg transition shadow-sm">
                                                 Evaluate Scenario
                                             </button>
                                         </div>
 
                                         {whatIfResult && (
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                                                <div className="bg-slate-950/60 p-4 border border-slate-900 rounded-lg space-y-3 text-xs">
-                                                    <div className="flex justify-between py-1.5 border-b border-slate-900/60">
-                                                        <span className="text-slate-400">Current Configuration:</span>
-                                                        <span className="font-mono text-slate-300">{whatIfResult.current_configuration.replicas} Replicas</span>
+                                                <div className="bg-slate-50 dark:bg-slate-950/60 p-4 border border-slate-200 dark:border-slate-800 rounded-lg space-y-3 text-xs shadow-sm">
+                                                    <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/60">
+                                                        <span className="text-slate-600 dark:text-slate-400 font-medium">Current Configuration:</span>
+                                                        <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{whatIfResult.current_configuration.replicas} Replicas</span>
                                                     </div>
-                                                    <div className="flex justify-between py-1.5 border-b border-slate-900/60">
-                                                        <span className="text-slate-400">Simulated Configuration:</span>
-                                                        <span className="font-mono text-emerald-400 font-bold">{whatIfResult.predicted_configuration.replicas} Replicas</span>
+                                                    <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/60">
+                                                        <span className="text-slate-600 dark:text-slate-400 font-medium">Simulated Configuration:</span>
+                                                        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{whatIfResult.predicted_configuration.replicas} Replicas</span>
                                                     </div>
-                                                    <div className="flex justify-between py-1.5 border-b border-slate-900/60">
-                                                        <span className="text-slate-400">Hourly Cost Difference:</span>
-                                                        <span className={`font-mono font-bold ${whatIfResult.cost_difference >= 0 ? 'text-pink-400' : 'text-emerald-400'}`}>
+                                                    <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/60">
+                                                        <span className="text-slate-600 dark:text-slate-400 font-medium">Hourly Cost Difference:</span>
+                                                        <span className={`font-mono font-bold ${whatIfResult.cost_difference >= 0 ? 'text-pink-600 dark:text-pink-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                                             {whatIfResult.cost_difference >= 0 ? '+' : ''}{formatCurrencyVal(whatIfResult.cost_difference, selectedCurrency, true)}/hr
                                                             {selectedCurrency !== 'USD' && (
                                                                 <span className="text-[10px] text-slate-500 block font-normal">
@@ -2712,25 +2712,25 @@
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between py-1.5">
-                                                        <span className="text-slate-400">Carbon Footprint Shift:</span>
-                                                        <span className="font-mono text-slate-300">{whatIfResult.carbon_impact_ghr.toFixed(1)} g CO2/hr</span>
+                                                        <span className="text-slate-600 dark:text-slate-400 font-medium">Carbon Footprint Shift:</span>
+                                                        <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{whatIfResult.carbon_impact_ghr.toFixed(1)} g CO2/hr</span>
                                                     </div>
                                                 </div>
 
-                                                <div className="bg-slate-950/60 p-4 border border-slate-900 rounded-lg space-y-3 text-xs">
-                                                    <div className="flex justify-between py-1.5 border-b border-slate-900/60">
-                                                        <span className="text-slate-400">Projected SLA Impact:</span>
-                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${whatIfResult.sla_impact === 'HEALTHY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                <div className="bg-slate-50 dark:bg-slate-950/60 p-4 border border-slate-200 dark:border-slate-800 rounded-lg space-y-3 text-xs shadow-sm">
+                                                    <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/60">
+                                                        <span className="text-slate-600 dark:text-slate-400 font-medium">Projected SLA Impact:</span>
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${whatIfResult.sla_impact === 'HEALTHY' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20'}`}>
                                                             {whatIfResult.sla_impact}
                                                         </span>
                                                     </div>
-                                                    <div className="flex justify-between py-1.5 border-b border-slate-900/60">
-                                                        <span className="text-slate-400">Risk Assessment Index:</span>
-                                                        <span className={`font-mono font-bold ${whatIfResult.risk === 'HIGH' ? 'text-rose-400' : 'text-emerald-400'}`}>{whatIfResult.risk}</span>
+                                                    <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/60">
+                                                        <span className="text-slate-600 dark:text-slate-400 font-medium">Risk Assessment Index:</span>
+                                                        <span className={`font-mono font-bold ${whatIfResult.risk === 'HIGH' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{whatIfResult.risk}</span>
                                                     </div>
                                                     <div className="flex justify-between py-1.5">
-                                                        <span className="text-slate-400">Recommended Action:</span>
-                                                        <span className="font-bold text-brand-400 font-mono">{whatIfResult.recommended_action}</span>
+                                                        <span className="text-slate-600 dark:text-slate-400 font-medium">Recommended Action:</span>
+                                                        <span className="font-bold text-brand-600 dark:text-brand-400 font-mono">{whatIfResult.recommended_action}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2739,15 +2739,15 @@
                                 </div>
 
                                 {/* Immutable Safety Audit Trail Timeline */}
-                                <div className="border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/10 rounded-xl p-5 space-y-4">
-                                    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 rounded-xl p-5 shadow-sm space-y-4">
+                                    <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                                         Immutable Safety Policy Audit Timeline Feed
                                     </h3>
                                     
-                                    <div className="bg-white dark:bg-slate-950/50 rounded-xl border border-slate-200 dark:border-slate-900 overflow-hidden">
+                                    <div className="bg-white dark:bg-slate-950/50 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
                                         <table className="w-full text-left text-xs border-collapse">
                                             <thead>
-                                                <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-900/30">
+                                                <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-semibold bg-slate-50 dark:bg-slate-900/50">
                                                     <th className="py-2.5 px-4">Timestamp</th>
                                                     <th className="py-2.5 px-4">Model Version</th>
                                                     <th className="py-2.5 px-4 text-center">Calculated Action</th>
@@ -2760,26 +2760,26 @@
                                             <tbody>
                                                 {safetyAuditLogs.length === 0 ? (
                                                     <tr>
-                                                        <td colSpan="7" className="py-8 text-center text-slate-400 dark:text-slate-500 italic">No historical audit trails logged.</td>
+                                                        <td colSpan="7" className="py-8 text-center text-slate-500 dark:text-slate-400 italic">No historical audit trails logged.</td>
                                                     </tr>
                                                 ) : (
                                                     safetyAuditLogs.map((log, index) => (
-                                                        <tr key={index} className="border-b border-slate-200 dark:border-slate-900 hover:bg-slate-50 dark:hover:bg-slate-900/10 text-slate-700 dark:text-slate-200">
-                                                            <td className="py-3 px-4 font-mono text-slate-400 dark:text-slate-500">{log.timestamp.replace('T', ' ').split('.')[0]}</td>
-                                                            <td className="py-3 px-4 font-mono text-slate-500 dark:text-slate-400">{log.model_version}</td>
-                                                            <td className="py-3 px-4 text-center font-mono font-semibold text-brand-400">{log.action}</td>
+                                                        <tr key={index} className="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-900/20 text-slate-800 dark:text-slate-200">
+                                                            <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400">{log.timestamp.replace('T', ' ').split('.')[0]}</td>
+                                                            <td className="py-3 px-4 font-mono text-slate-700 dark:text-slate-300">{log.model_version}</td>
+                                                            <td className="py-3 px-4 text-center font-mono font-semibold text-brand-600 dark:text-brand-400">{log.action}</td>
                                                             <td className="py-3 px-4 text-center">
-                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${log.risk_score === 'CRITICAL' || log.risk_score === 'HIGH' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${log.risk_score === 'CRITICAL' || log.risk_score === 'HIGH' ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20'}`}>
                                                                     {log.risk_score}
                                                                 </span>
                                                             </td>
                                                             <td className="py-3 px-4 text-center">
-                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${log.policy_result === 'PASSED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${log.policy_result === 'PASSED' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20'}`}>
                                                                     {log.policy_result}
                                                                 </span>
                                                             </td>
-                                                            <td className="py-3 px-4 text-slate-600 dark:text-slate-300 italic max-w-sm truncate" title={log.reason}>{log.reason}</td>
-                                                            <td className="py-3 px-4 font-mono text-[10px] text-slate-500 dark:text-slate-400">{log.execution_result}</td>
+                                                            <td className="py-3 px-4 text-slate-700 dark:text-slate-300 italic max-w-sm truncate" title={log.reason}>{log.reason}</td>
+                                                            <td className="py-3 px-4 font-mono text-[11px] text-slate-600 dark:text-slate-400">{log.execution_result}</td>
                                                         </tr>
                                                     ))
                                                 )}
