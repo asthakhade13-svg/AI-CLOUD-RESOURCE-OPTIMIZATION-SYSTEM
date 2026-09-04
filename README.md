@@ -1,5 +1,13 @@
 # AI-Powered Predictive Cloud Resource Optimization & Auto-Scaling System
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/)
+[![API Docs](https://img.shields.io/badge/Swagger%20API-Docs-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs)
+[![Uptime](https://img.shields.io/badge/Uptime%20Monitoring-Active%2024%2F7-brightgreen?style=for-the-badge&logo=uptimerobot&logoColor=white)](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/health)
+
+> 🌐 **Live Web Application**: [https://ai-cloud-resource-optimization-system-d1ld.onrender.com/](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/)  
+> 📖 **Interactive API Documentation (Swagger)**: [https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs)  
+> 🩺 **System Health Check**: [https://ai-cloud-resource-optimization-system-d1ld.onrender.com/health](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/health)
+
 A comprehensive, production-quality machine learning system implementing a two-stage **Predictive Autoscaling** architecture. It transitions scaling decisions from a *reactive* model (adjusting to current load) to a *proactive* model (forecasting workload trends and scaling in advance to prevent service disruptions).
 
 ---
@@ -117,14 +125,16 @@ Start the FastAPI REST backend to serve predictive scaling:
 ```bash
 uvicorn main:app --reload
 ```
-* Swagger UI Docs: `http://127.0.0.1:8000/docs`
+* Local Swagger UI Docs: `http://127.0.0.1:8000/docs`
+* Live Cloud Swagger UI Docs: `https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs`
 
 ---
 
 ## 📖 API Usage Example
 
 Query the `/predict` POST endpoint with the current infrastructure telemetry:
-* **Endpoint:** `POST http://127.0.0.1:8000/predict`
+* **Live Production Endpoint:** `POST https://ai-cloud-resource-optimization-system-d1ld.onrender.com/predict`
+* **Local Development Endpoint:** `POST http://127.0.0.1:8000/predict`
 * **Request Payload:**
   ```json
   {
