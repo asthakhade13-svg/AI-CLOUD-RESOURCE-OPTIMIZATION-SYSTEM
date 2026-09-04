@@ -36,34 +36,6 @@ graph LR
 
 ---
 
-## 🚀 Quickstart
-
-### Option 1: Run with Docker (Recommended)
-```bash
-# Clone the repository
-git clone https://github.com/asthakhade13-svg/AI-CLOUD-RESOURCE-OPTIMIZATION-SYSTEM.git
-cd AI-CLOUD-RESOURCE-OPTIMIZATION-SYSTEM
-
-# Build and run all services (ML Engine + Gateway + Dashboard)
-docker-compose up -d --build
-```
-Access the dashboard at **`http://localhost:8000`**.
-
-### Option 2: Local Python Environment
-```bash
-# 1. Install dependencies
-pip install -r requirements.txt
-
-# 2. Start ML Engine (Port 8050)
-python -m uvicorn ml_service.main:app --port 8050
-
-# 3. Start API Gateway & Dashboard (Port 8000)
-python -m uvicorn app.main:app --port 8000
-```
-Open **`http://localhost:8000`** in your browser.
-
----
-
 ## 📡 API Reference
 
 | Method | Endpoint | Description |
