@@ -1,173 +1,124 @@
-# AI-Powered Predictive Cloud Resource Optimization & Auto-Scaling System
+# AI Cloud Resource Optimization & Predictive Autoscaler
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/)
-[![API Docs](https://img.shields.io/badge/Swagger%20API-Docs-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs)
-[![Uptime](https://img.shields.io/badge/Uptime%20Monitoring-Active%2024%2F7-brightgreen?style=for-the-badge&logo=uptimerobot&logoColor=white)](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/health)
+[![API Docs](https://img.shields.io/badge/Swagger-API%20Docs-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs)
+[![Uptime](https://img.shields.io/badge/Uptime-100%25%20Active-brightgreen?style=for-the-badge&logo=uptimerobot&logoColor=white)](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/health)
+[![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 
-> 🌐 **Live Web Application**: [https://ai-cloud-resource-optimization-system-d1ld.onrender.com/](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/)  
-> 📖 **Interactive API Documentation (Swagger)**: [https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs)  
-> 🩺 **System Health Check**: [https://ai-cloud-resource-optimization-system-d1ld.onrender.com/health](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/health)
+> 🌐 **Live Web Application**: [ai-cloud-resource-optimization-system-d1ld.onrender.com](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/)  
+> 📖 **Interactive API Docs (Swagger)**: [ai-cloud-resource-optimization-system-d1ld.onrender.com/docs](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs)  
+> 🩺 **Health Check**: [ai-cloud-resource-optimization-system-d1ld.onrender.com/health](https://ai-cloud-resource-optimization-system-d1ld.onrender.com/health)
 
-A comprehensive, production-quality machine learning system implementing a two-stage **Predictive Autoscaling** architecture. It transitions scaling decisions from a *reactive* model (adjusting to current load) to a *proactive* model (forecasting workload trends and scaling in advance to prevent service disruptions).
-
----
-
-## 📂 Project Directory Structure
-
-```text
-ai-cloud-resource/
-│
-├── data/                    # Raw & preprocessed datasets, and plots
-│   ├── synthetic_workload.csv   # Raw workload metrics (5-min intervals)
-│   ├── cleaned_workload.csv     # Preprocessed, validated, and anomaly-cleaned dataset
-│   └── plots/               # Automatically generated dashboard & forecasting visualizations
-│
-├── src/                     # Reusable source code modules
-│   ├── __init__.py          # Python package initializer
-│   ├── generator.py         # Workload metrics generator (5-min intervals)
-│   ├── validation.py        # Static schema and data boundary validation
-│   ├── pipeline.py          # Preprocessing, duplicate removal, NaN handling, and scaling
-│   ├── features.py          # Lag, rolling, trend, and cyclical temporal feature engineering
-│   ├── forecasting.py       # Time-series workload forecasting engine (Stage 1)
-│   └── train_models.py      # Stage 2 capacity predictor training & MDI report
-│
-├── artifacts/               # Serialized binary machine learning assets
-│   ├── forecaster_5min.pkl                      # 5-min workload forecaster (XGBoost)
-│   ├── forecaster_10min.pkl                     # 10-min workload forecaster (XGBoost)
-│   ├── forecaster_15min.pkl                     # 15-min workload forecaster (XGBoost)
-│   ├── cloud_resource_optimization_model.pkl   # Server capacity predictor (Random Forest)
-│   ├── scaler.pkl                               # StandardScaler fitted on clean features
-│   ├── features_list.pkl                        # Feature column names for Capacity model
-│   └── forecasting_features_list.pkl            # Feature column names for Forecaster models
-│
-├── main.py                  # FastAPI Backend serving predictive scaling queries
-├── test_main.py             # Unit tests checking API endpoints
-├── test_pipeline.py         # Unit tests checking preprocessing pipelines
-├── test_forecasting.py      # Unit tests checking workload forecasting pipeline
-├── requirements.txt         # Project package dependencies
-├── Dockerfile               # Containerization configuration
-└── README.md                # Project documentation & instructions
-```
+An end-to-end Machine Learning system that converts cloud autoscaling from **reactive** (lagging behind load spikes) into **proactive** (forecasting demand 5–15 minutes ahead to boot capacity before performance degrades).
 
 ---
 
-## 🛠️ Tech Stack & Requirements
-* **Framework:** FastAPI, Uvicorn (REST API Backend)
-* **ML Engines:** Scikit-Learn, XGBoost, Pandas, NumPy, Joblib
-* **Visualizations:** Matplotlib
-* **Unit Testing:** Pytest, HTTPX
+## ⚡ Key Capabilities
+
+* **🔮 Multi-Horizon Workload Forecasting**: Direct multi-step time-series forecasting (5, 10, 15 min) predicting CPU, memory, traffic, request rate, and latency.
+* **🎯 Proactive Capacity Sizing**: Multi-factor regression sizing servers with safety buffers to guarantee 99.9% SLA compliance while eliminating idle over-provisioning costs.
+* **🧠 Explainable AI (SHAP)**: Real-time TreeSHAP attributions showing exact resource drivers (latency, CPU, memory) with natural language justifications.
+* **🛡️ Continuous MLOps & Safety Guardrails**: Real-time Kolmogorov-Smirnov drift detection, champion/challenger canary evaluation, automated retrain gates, and 1-click rollback.
+* **📊 Self-Contained Interactive Dashboard**: Adaptive high-contrast Light/Dark mode console featuring Digital Twin simulations, Chaos fault injection, and cost analytics.
 
 ---
 
-## 🚀 Two-Stage Predictive Auto-Scaling Architecture
-
-This project divides predictive scaling into a modular two-stage execution:
+## 🏗️ Architecture
 
 ```mermaid
-graph TD
-    A[Raw Cloud Telemetry] -->|History Window: 30 mins| B(Stage 1: Workload Forecaster)
-    B -->|Forecasts: t+5, t+10, t+15| C{Forecasted Workloads}
-    C -->|Projected 15-Min Metrics| D(Stage 2: Capacity Predictor)
-    D -->|Evaluate Proactive Resource Needs| E[Proactive Scaling Action]
+graph LR
+    A[Telemetry Stream] --> B[Stage 1: Multi-Step Forecaster]
+    B -->|Projected 5/10/15m Load| C[Stage 2: Capacity Predictor]
+    C --> D{Safety & SLA Layer}
+    D -->|Explainability| E[SHAP Interpreter]
+    D -->|Proactive Action| F[Kubernetes / Cloud Autoscaler]
 ```
-
-1. **Stage 1 (Workload Forecaster):** Fits an `XGBoost` regressor to forecast core metrics (`cpu_usage`, `memory_usage`, `network_traffic`, `active_users`, `request_rate`, `response_time`) for the next 5, 10, and 15 minutes. It uses direct multi-step forecasting to prevent multi-step error accumulation.
-2. **Stage 2 (Capacity Predictor):** Fits a `RandomForestRegressor` capacity model to map resource metrics to `required_servers`. Feeding the forecasted 15-minute workloads into this capacity model determines optimal server counts 15 minutes in advance, allowing Auto-Scaling groups to boot VMs before traffic spikes peg existing instances.
 
 ---
 
-## 🏃 Step-by-Step Execution Guide
+## 🚀 Quickstart
 
-### 1. Installation
-Install all package dependencies:
+### Option 1: Run with Docker (Recommended)
 ```bash
+# Clone the repository
+git clone https://github.com/asthakhade13-svg/AI-CLOUD-RESOURCE-OPTIMIZATION-SYSTEM.git
+cd AI-CLOUD-RESOURCE-OPTIMIZATION-SYSTEM
+
+# Build and run all services (ML Engine + Gateway + Dashboard)
+docker-compose up -d --build
+```
+Access the dashboard at **`http://localhost:8000`**.
+
+### Option 2: Local Python Environment
+```bash
+# 1. Install dependencies
 pip install -r requirements.txt
-```
 
-### 2. Generate Workload Metrics (5-Min Interval)
-Generate a 30-day synthetic telemetry dataset containing diurnal patterns, weekend variance, and resource anomalies:
-```bash
-python -m src.generator
-```
-* Saves raw data to `data/synthetic_workload.csv` (8,643 rows).
+# 2. Start ML Engine (Port 8050)
+python -m uvicorn ml_service.main:app --port 8050
 
-### 3. Run Preprocessing Pipeline
-Deduplicate, impute NaNs, clip outliers, generate base features, and fit standardizers:
-```bash
-python -m src.pipeline
+# 3. Start API Gateway & Dashboard (Port 8000)
+python -m uvicorn app.main:app --port 8000
 ```
-* Saves cleaned data to `data/cleaned_workload.csv` and standardizer to `artifacts/scaler.pkl`.
-
-### 4. Train Workload Forecasters (Stage 1)
-Fit, compare, and serialize the multi-horizon forecasting models:
-```bash
-python -m src.forecasting
-```
-* Compares Random Forest, XGBoost, and Gradient Boosting.
-* Saves forecaster models to `artifacts/forecaster_5min.pkl`, `artifacts/forecaster_10min.pkl`, and `artifacts/forecaster_15min.pkl`.
-* Saves evaluation plots (`forecast_actual_vs_predicted.png`, `forecast_horizon_progression.png`, and `forecast_prediction_errors.png`) in `data/plots/`.
-
-### 5. Train Capacity Predictor (Stage 2)
-Fit and serialize the server capacity model:
-```bash
-python -m src.train_models
-```
-* Saves capacity model to `artifacts/cloud_resource_optimization_model.pkl` and outputs feature MDI analysis.
-
-### 6. Run the Test Suite
-Run automated unit tests to verify the pipeline, validation, forecasting, and API endpoints:
-```bash
-python -m pytest
-```
-
-### 7. Launch the API Server
-Start the FastAPI REST backend to serve predictive scaling:
-```bash
-uvicorn main:app --reload
-```
-* Local Swagger UI Docs: `http://127.0.0.1:8000/docs`
-* Live Cloud Swagger UI Docs: `https://ai-cloud-resource-optimization-system-d1ld.onrender.com/docs`
+Open **`http://localhost:8000`** in your browser.
 
 ---
 
-## 📖 API Usage Example
+## 📡 API Reference
 
-Query the `/predict` POST endpoint with the current infrastructure telemetry:
-* **Live Production Endpoint:** `POST https://ai-cloud-resource-optimization-system-d1ld.onrender.com/predict`
-* **Local Development Endpoint:** `POST http://127.0.0.1:8000/predict`
-* **Request Payload:**
-  ```json
-  {
-    "cpu_usage": 68.0,
-    "memory_usage": 72.0,
-    "network_in": 100.0,
-    "network_out": 250.0,
-    "network_traffic": 350.0,
-    "disk_read": 80.0,
-    "disk_write": 40.0,
-    "active_users": 250,
-    "request_rate": 625.0,
-    "response_time": 185.0,
-    "error_rate": 0.05,
-    "current_servers": 5,
-    "server_cost": 0.60
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/predict` | Evaluates workload telemetry and returns recommended server capacity, SLA risk, and SHAP attributions. |
+| `GET` | `/health` | Lightweight gateway and microservice liveness probe. |
+| `GET` | `/model/status` | Current champion/challenger model version and training metadata. |
+| `GET` | `/model/drift` | Kolmogorov-Smirnov statistical feature drift status and metrics. |
+| `POST` | `/model/retrain` | Triggers retraining pipeline with evaluation gate. |
+| `POST` | `/optimizer/optimize` | Runs Pareto multi-objective cost vs. SLA optimization. |
+
+### Sample Prediction Request
+```bash
+curl -X POST "https://ai-cloud-resource-optimization-system-d1ld.onrender.com/predict" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "cpu_usage": 78.0,
+       "memory_usage": 82.0,
+       "network_traffic": 390.0,
+       "active_users": 290,
+       "current_servers": 5,
+       "request_rate": 625.0,
+       "response_time": 185.0,
+       "error_rate": 0.05,
+       "server_cost": 0.60
+     }'
+```
+
+### Sample Response
+```json
+{
+  "predicted_required_servers": 4,
+  "recommended_servers": 5,
+  "scaling_action": "NO_ACTION",
+  "sla_status": "HEALTHY",
+  "estimated_daily_cost": 72.0,
+  "shap_explanation": "The system recommends 5 servers primarily because application response latency and CPU utilization are elevated.",
+  "shap_contributions": {
+    "Response latency": 1.0532,
+    "CPU utilization": 0.0426,
+    "Active users": 0.0058,
+    "Request workload rate": -0.0005
   }
-  ```
-* **Response Payload:**
-  ```json
-  {
-    "current_cpu": 68.0,
-    "predicted_cpu_5min": 76.5,
-    "predicted_cpu_10min": 84.1,
-    "predicted_cpu_15min": 91.2,
-    "current_servers": 5,
-    "predicted_required_servers": 8,
-    "scaling_action": "SCALE UP",
-    "reasoning": "Workload forecasting detects incoming spike. Predicted CPU: 91.2% in 15 mins. Proactive Recommendation: SCALE UP BEFORE WORKLOAD SPIKE.",
-    "forecasts": {
-      "5min": { "cpu_usage": 76.5, "memory_usage": 74.2, "network_traffic": 395.0, "active_users": 298.5, "request_rate": 745.2, "response_time": 210.5 },
-      "10min": { "cpu_usage": 84.1, "memory_usage": 78.4, "network_traffic": 445.0, "active_users": 348.1, "request_rate": 870.5, "response_time": 245.1 },
-      "15min": { "cpu_usage": 91.2, "memory_usage": 83.2, "network_traffic": 498.5, "active_users": 398.9, "request_rate": 998.2, "response_time": 290.4 }
-    }
-  }
-  ```
+}
+```
+
+---
+
+## 🧪 Testing & Verification
+```bash
+# Run unit test suite
+pytest -v
+```
+
+---
+
+## 📜 License
+Distributed under the MIT License.
