@@ -6,6 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
+# Install system dependencies needed by ML algorithms (OpenMP runtime libgomp1)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set the working directory in the container
 WORKDIR /app
 
@@ -27,8 +33,8 @@ COPY index.html /app/
 COPY main.py /app/
 COPY start.sh /app/
 
-# Set execution permission on start script
-RUN chmod +x /app/start.sh
+# Sanitize CRLF to LF line endings and set execution permission
+RUN sed -i 's/\r$//' /app/start.sh && chmod +x /app/start.sh
 
 # Expose public gateway port and internal ML engine port
 EXPOSE 8000

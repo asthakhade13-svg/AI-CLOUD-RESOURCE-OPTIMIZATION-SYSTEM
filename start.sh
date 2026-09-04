@@ -17,9 +17,9 @@ python -m uvicorn ml_service.main:app --host 127.0.0.1 --port ${ML_PORT} &
 ML_PID=$!
 
 echo "-> Waiting for ML Service initialization..."
-for i in $(seq 1 45); do
+for i in $(seq 1 30); do
     if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8050/health')" 2>/dev/null; then
-        echo "? ML Service is healthy and operational (PID: ${ML_PID})."
+        echo "ML Service is healthy and operational (PID: ${ML_PID})."
         break
     fi
     sleep 1
