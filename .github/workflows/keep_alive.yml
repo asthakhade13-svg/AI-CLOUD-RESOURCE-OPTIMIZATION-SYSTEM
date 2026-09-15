@@ -1,0 +1,16 @@
+name: Keep Render App Alive 24/7
+
+on:
+  schedule:
+    # Runs every 10 minutes to prevent Render free-tier sleep
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Health Endpoint
+        run: |
+          echo "Pinging Render deployment to keep container awake..."
+          curl -s -f -m 30 "https://ai-cloud-resource-optimization-system-d1ld.onrender.com/health" || echo "App waking up"
