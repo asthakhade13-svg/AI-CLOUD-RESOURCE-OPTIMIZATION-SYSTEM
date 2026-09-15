@@ -3,11 +3,12 @@
 import os
 import json
 import time
+from datetime import datetime, timedelta
 from typing import Dict, List, Any, Tuple
-from datetime import datetime
+from src.path_utils import resolve_path
 
-AUDIT_LOG_PATH = "data/decision_audit_log.json"
-POLICIES_PATH = "data/safety_policies.json"
+AUDIT_LOG_PATH = resolve_path("data/decision_audit_log.json")
+POLICIES_PATH = resolve_path("data/safety_policies.json")
 
 DEFAULT_POLICIES = {
     "min_replicas": 2,

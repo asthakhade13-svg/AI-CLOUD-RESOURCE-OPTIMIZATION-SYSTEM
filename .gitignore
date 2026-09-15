@@ -16,3 +16,7 @@ Thumbs.db
 
 # Datasets
 data/*.csv
+
+# Temporary and scratch files
+scratch/
+

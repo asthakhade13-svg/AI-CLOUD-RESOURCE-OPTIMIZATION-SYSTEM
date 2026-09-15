@@ -6,11 +6,12 @@ import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend to prevent GUI window blocking
 import matplotlib.pyplot as plt
 import shap
+from src.path_utils import resolve_path
 
-CLEANED_DATA_PATH = "data/cleaned_workload.csv"
-FEATURES_LIST_PATH = "artifacts/features_list.pkl"
-MODEL_PATH = "artifacts/cloud_resource_optimization_model.pkl"
-SCALER_PATH = "artifacts/scaler.pkl"
+CLEANED_DATA_PATH = resolve_path("data/cleaned_workload.csv")
+FEATURES_LIST_PATH = resolve_path("artifacts/features_list.pkl")
+MODEL_PATH = resolve_path("artifacts/cloud_resource_optimization_model.pkl")
+SCALER_PATH = resolve_path("artifacts/scaler.pkl")
 
 def generate_global_shap_plots(model, X_test_scaled, feature_names):
     """

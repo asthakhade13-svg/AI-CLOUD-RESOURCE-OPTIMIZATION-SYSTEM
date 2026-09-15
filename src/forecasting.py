@@ -3,6 +3,7 @@ import numpy as np
 import os
 import time
 import joblib
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.multioutput import MultiOutputRegressor
@@ -12,11 +13,13 @@ try:
 except Exception:
     XGBRegressor = None
 
+from src.path_utils import resolve_path
+
 # File paths
-CLEANED_DATA_PATH = "data/cleaned_workload.csv"
-FORECASTER_5MIN_PATH = "artifacts/forecaster_5min.pkl"
-FORECASTER_10MIN_PATH = "artifacts/forecaster_10min.pkl"
-FORECASTER_15MIN_PATH = "artifacts/forecaster_15min.pkl"
+CLEANED_DATA_PATH = resolve_path("data/cleaned_workload.csv")
+FORECASTER_5MIN_PATH = resolve_path("artifacts/forecaster_5min.pkl")
+FORECASTER_10MIN_PATH = resolve_path("artifacts/forecaster_10min.pkl")
+FORECASTER_15MIN_PATH = resolve_path("artifacts/forecaster_15min.pkl")
 
 # Telemetry metrics we want to forecast
 FORECAST_METRICS = [
@@ -272,34 +275,55 @@ _cached_models = {}
 def load_forecasting_models():
     global _cached_models
     if not _cached_models:
-        _cached_models["5min"] = joblib.load(FORECASTER_5MIN_PATH)
-        _cached_models["10min"] = joblib.load(FORECASTER_10MIN_PATH)
-        _cached_models["15min"] = joblib.load(FORECASTER_15MIN_PATH)
-    return _cached_models["5min"], _cached_models["10min"], _cached_models["15min"]
+        f5 = resolve_path("artifacts/forecaster_5min.pkl")
+        f10 = resolve_path("artifacts/forecaster_10min.pkl")
+        f15 = resolve_path("artifacts/forecaster_15min.pkl")
+        if os.path.exists(f5) and os.path.exists(f10) and os.path.exists(f15):
+            _cached_models["5min"] = joblib.load(f5)
+            _cached_models["10min"] = joblib.load(f10)
+            _cached_models["15min"] = joblib.load(f15)
+        else:
+            return None, None, None
+    return _cached_models.get("5min"), _cached_models.get("10min"), _cached_models.get("15min")
 
 def forecast_next_workloads(history_df: pd.DataFrame):
     """
-    Reusable prediction function. Takes a DataFrame of the last 6 observations
-    (minimum needed for lags) and returns a dictionary with predictions for 5, 10, and 15 mins.
+    Reusable prediction function. Takes a DataFrame of at least 6 historical observations
+    and returns a dictionary with predictions for 5, 10, and 15 mins.
     """
-    if len(history_df) < 6:
+    if history_df is None or len(history_df) < 6:
         raise ValueError("history_df must contain at least 6 chronological observations to compute lag features.")
         
     # Align and order columns
     history = history_df.tail(6).copy()
     
     # Check features list
-    feature_list_path = "artifacts/forecasting_features_list.pkl"
-    if not os.path.exists(feature_list_path):
-        raise FileNotFoundError(f"Forecasting feature names file not found at: {feature_list_path}. Run training first.")
-    features = joblib.load(feature_list_path)
+    feature_list_path = resolve_path("artifacts/forecasting_features_list.pkl")
+    features = None
+    if os.path.exists(feature_list_path):
+        try:
+            features = joblib.load(feature_list_path)
+        except Exception:
+            features = None
+            
+    # Load models
+    model_5m, model_10m, model_15m = load_forecasting_models()
+    
+    # If models or features are missing, perform trend/momentum heuristic fallback
+    if model_5m is None or features is None:
+        last_obs = history.iloc[-1]
+        trend = (history.iloc[-1][FORECAST_METRICS] - history.iloc[0][FORECAST_METRICS]) / max(1, (len(history) - 1))
+        return {
+            "5min": {col: float(np.clip(last_obs[col] + trend[col] * 1, 0, None)) for col in FORECAST_METRICS},
+            "10min": {col: float(np.clip(last_obs[col] + trend[col] * 2, 0, None)) for col in FORECAST_METRICS},
+            "15min": {col: float(np.clip(last_obs[col] + trend[col] * 3, 0, None)) for col in FORECAST_METRICS}
+        }
     
     # Construct lag features from history
     row_data = {}
     for col in FORECAST_METRICS:
         # Lags 1 to 6
         for lag in range(1, 7):
-            # history is sorted, so index -lag retrieves correct lag
             row_data[f"{col}_lag_{lag}"] = [history.iloc[-lag][col]]
             
     # Extract time features of the latest observation (at index -1)
@@ -316,10 +340,12 @@ def forecast_next_workloads(history_df: pd.DataFrame):
     row_data["sin_day_of_week"] = [np.sin(2 * np.pi * day_of_week / 7.0)]
     row_data["cos_day_of_week"] = [np.cos(2 * np.pi * day_of_week / 7.0)]
     
-    X_pred = pd.DataFrame(row_data)[features]
-    
-    # Load cached model files
-    model_5m, model_10m, model_15m = load_forecasting_models()
+    X_pred = pd.DataFrame(row_data)
+    # Ensure all features exist
+    for f in features:
+        if f not in X_pred.columns:
+            X_pred[f] = 0.0
+    X_pred = X_pred[features]
     
     # Predict (each outputs a 2D array of shape [1, 6])
     pred_5 = model_5m.predict(X_pred)[0]

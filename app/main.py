@@ -171,10 +171,12 @@ def predict_capacity(payload: PredictRequest):
     }
     
     try:
-        ml_res = requests.post(f"{ML_SERVICE_URL}/predict_raw", json=raw_payload, timeout=5)
+        ml_res = requests.post(f"{ML_SERVICE_URL}/predict_raw", json=raw_payload, timeout=15)
         if ml_res.status_code != 200:
             raise HTTPException(status_code=502, detail=f"ML Service returned error: {ml_res.text}")
         ml_data = ml_res.json()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to communicate with ML Model Service: {e}")
         raise HTTPException(status_code=502, detail=f"ML Model service unreachable: {str(e)}")
@@ -315,7 +317,7 @@ def predict_forecasts(payload: TelemetryPayload):
     try:
         # Wrap PredictRequest mapping
         ml_payload = {**input_dict, "current_servers": payload.current_servers}
-        res = requests.post(f"{ML_SERVICE_URL}/predict_raw", json=ml_payload, timeout=5)
+        res = requests.post(f"{ML_SERVICE_URL}/predict_raw", json=ml_payload, timeout=15)
         if res.status_code != 200:
             raise HTTPException(status_code=502, detail="ML Service error.")
         return ForecastOutput(forecasts=res.json()["forecasts"])
@@ -372,7 +374,7 @@ def evaluate_anomaly(payload: TelemetryPayload):
         
     try:
         ml_payload = {**input_dict, "current_servers": payload.current_servers}
-        res = requests.post(f"{ML_SERVICE_URL}/predict_raw", json=ml_payload, timeout=5)
+        res = requests.post(f"{ML_SERVICE_URL}/predict_raw", json=ml_payload, timeout=15)
         if res.status_code != 200:
             raise HTTPException(status_code=502, detail="ML Service anomaly check failed.")
         data = res.json()

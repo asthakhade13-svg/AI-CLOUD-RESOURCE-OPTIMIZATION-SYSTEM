@@ -20,14 +20,16 @@ try:
 except Exception:
     LGBMRegressor = None
 
-REGISTRY_PATH = "artifacts/model_registry.json"
-MODELS_DIR = "artifacts/models"
-HISTORY_DIR = "data/model_history"
-PREDS_LOG_PATH = os.path.join(HISTORY_DIR, "predictions_log.csv")
-REFERENCE_DATA_PATH = "data/cleaned_workload.csv"
-CHAMPION_MODEL_PATH = "artifacts/cloud_resource_optimization_model.pkl"
-FEATURES_LIST_PATH = "artifacts/features_list.pkl"
-SCALER_PATH = "artifacts/scaler.pkl"
+from src.path_utils import resolve_path
+
+REGISTRY_PATH = resolve_path("artifacts/model_registry.json")
+MODELS_DIR = resolve_path("artifacts/models")
+HISTORY_DIR = resolve_path("data/model_history")
+PREDS_LOG_PATH = resolve_path("data/model_history/predictions_log.csv")
+REFERENCE_DATA_PATH = resolve_path("data/cleaned_workload.csv")
+CHAMPION_MODEL_PATH = resolve_path("artifacts/cloud_resource_optimization_model.pkl")
+FEATURES_LIST_PATH = resolve_path("artifacts/features_list.pkl")
+SCALER_PATH = resolve_path("artifacts/scaler.pkl")
 
 # Base features to check for drift
 DRIFT_FEATURES = [

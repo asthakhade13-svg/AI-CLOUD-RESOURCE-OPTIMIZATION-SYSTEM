@@ -6,8 +6,9 @@ import time
 import random
 from typing import Dict, List, Any, Tuple
 from datetime import datetime
+from src.path_utils import resolve_path
 
-AIOPS_INCIDENTS_LOG = "data/aiops_incidents.json"
+AIOPS_INCIDENTS_LOG = resolve_path("data/aiops_incidents.json")
 
 # Default Service Dependency Graph structure
 DEFAULT_DEPENDENCY_GRAPH = {
